@@ -1,0 +1,1244 @@
+{
+  "version": "v5.0",
+  "generated_at": "2026-05-13",
+  "sources": [
+    "aleabitoreddit",
+    "ParadisLabs",
+    "HyperTechInvest",
+    "zephyr_z9",
+    "jukan05",
+    "citrini"
+  ],
+  "meta": {
+    "total_tickers": 85,
+    "total_layers": 12,
+    "themes": [
+      "Photonics",
+      "Helium Crisis",
+      "Robotics",
+      "Power",
+      "Advanced Packaging",
+      "Memory",
+      "PCB/Interconnect",
+      "Chipmaking Machines",
+      "Space/Quantum",
+      "AI Materials"
+    ]
+  },
+  "consensus_heatmap": [
+    {
+      "ticker": "MU",
+      "stars": 5,
+      "accounts": [
+        "aleabitoreddit",
+        "HyperTechInvest",
+        "jukan05",
+        "citrini"
+      ],
+      "layer": "L1_Memory",
+      "role": "HBM / Memory",
+      "target": "Multi-year hold",
+      "priority": "TOP"
+    },
+    {
+      "ticker": "AVGO",
+      "stars": 4,
+      "accounts": [
+        "HyperTechInvest",
+        "zephyr_z9",
+        "citrini"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "Custom Accelerators / Networking",
+      "target": "Long-term",
+      "priority": "TOP"
+    },
+    {
+      "ticker": "MRVL",
+      "stars": 4,
+      "accounts": [
+        "aleabitoreddit",
+        "HyperTechInvest",
+        "citrini"
+      ],
+      "layer": "L2a_Optical",
+      "role": "CPO Integration",
+      "target": "Long-term",
+      "priority": "TOP"
+    },
+    {
+      "ticker": "AAOI",
+      "stars": 4,
+      "accounts": [
+        "aleabitoreddit",
+        "jukan05",
+        "citrini"
+      ],
+      "layer": "L2a_Optical",
+      "role": "CPO / Optical",
+      "target": "10x revenue ramp",
+      "priority": "TOP"
+    },
+    {
+      "ticker": "COHR",
+      "stars": 4,
+      "accounts": [
+        "aleabitoreddit",
+        "jukan05",
+        "citrini"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Optical Components",
+      "target": "Hold / M&A",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "QCOM",
+      "stars": 3,
+      "accounts": [
+        "ParadisLabs",
+        "HyperTechInvest",
+        "citrini"
+      ],
+      "layer": "L1_Compute",
+      "role": "Lead Hyperscaler / DSP",
+      "target": "Hold",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "ETN",
+      "stars": 3,
+      "accounts": [
+        "HyperTechInvest",
+        "zephyr_z9",
+        "citrini"
+      ],
+      "layer": "L3_Power",
+      "role": "Power / Electrical",
+      "target": "Multi-year",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "CRDO",
+      "stars": 3,
+      "accounts": [
+        "HyperTechInvest",
+        "citrini"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Interconnects / MicroLED",
+      "target": "Acquisition target",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "AMD",
+      "stars": 2,
+      "accounts": [
+        "HyperTechInvest",
+        "citrini"
+      ],
+      "layer": "L1_Compute",
+      "role": "GPU/CPU/Custom Silicon",
+      "target": "$2T potential (10x)",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "LNG",
+      "stars": 2,
+      "accounts": [
+        "HyperTechInvest",
+        "citrini"
+      ],
+      "layer": "L3_Power",
+      "role": "Natural Gas",
+      "target": "Power Struggle",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "MP",
+      "stars": 2,
+      "accounts": [
+        "aleabitoreddit",
+        "citrini"
+      ],
+      "layer": "L3_Materials",
+      "role": "Rare Earths",
+      "target": "Policy-driven",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "AXTI",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "InP Substrate Monopoly",
+      "target": "$10B+ potential",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "SIVE",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "CW Laser Light Source",
+      "target": "$1B rev by 2029",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "LITE",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "200G EML Monopoly",
+      "target": "Sold out thru 2028",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "RPI",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L1_Compute",
+      "role": "OpenClaw/Picoclaw",
+      "target": "fwd 19 P/E",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "SITM",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "MEMS Timing",
+      "target": "150%+ growth",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "GLW",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Glass Substrates",
+      "target": "Near-monopoly",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "TEL",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Connectors",
+      "target": "Oligopoly",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "APH",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Connectors",
+      "target": "Oligopoly",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "FORM",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Testing Equipment",
+      "target": "Largest Account 1",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "LWLG",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "TFLN",
+      "target": "Early stage",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "CIEN",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Networking",
+      "target": "Hold",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "KEYS",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Networking",
+      "target": "Hold",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "MTRN",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L3_Materials",
+      "role": "Materials",
+      "target": "Hold",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "SMTC",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Laser Driver",
+      "target": "Early stage",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "JEN",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Micro-lenses",
+      "target": "Early stage",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "ASTS",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L6_Space",
+      "role": "Satellite Direct-to-Phone",
+      "target": "Mid cap long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "PL",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L6_Space",
+      "role": "AI Earth Observation",
+      "target": "Merlin launch Oct 26",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "IONQ",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L6_Space",
+      "role": "Quantum Computing",
+      "target": "Speculative",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "RGTI",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L6_Space",
+      "role": "Quantum Hardware",
+      "target": "Speculative",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "NBIS",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L6_Space",
+      "role": "Space Infrastructure",
+      "target": "Earnings dependent",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "PLUG",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L3_Power",
+      "role": "Hydrogen Fuel Cells",
+      "target": "Speculative",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "POET",
+      "stars": 1,
+      "accounts": [
+        "ParadisLabs"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Photonics Integration",
+      "target": "Small cap",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "Fujibo",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L2b_PCB",
+      "role": "PCB/Interconnect",
+      "target": "Breakout",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "AMEC",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L3_Machines",
+      "role": "China Etching Tools",
+      "target": "Long-term",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "Nabtesco",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Harmonic Reducer",
+      "target": "Robot bottleneck",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "Harmonic Drive",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Harmonic Reducer",
+      "target": "Hold",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "THK",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Linear Motion Guides",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "SMC",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Pneumatic Components",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Yaskawa",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Servo Motors",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Fanuc",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Industrial Robots",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Keyence",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9"
+      ],
+      "layer": "L5_Robotics",
+      "role": "Machine Vision",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "EMC",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9",
+        "jukan05"
+      ],
+      "layer": "L2b_PCB",
+      "role": "CCL Manufacturer",
+      "target": "Margin expansion",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "TUC",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9",
+        "jukan05"
+      ],
+      "layer": "L2b_PCB",
+      "role": "CCL Manufacturer",
+      "target": "Margin expansion",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "ITEQ",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9",
+        "jukan05"
+      ],
+      "layer": "L2b_PCB",
+      "role": "CCL Manufacturer",
+      "target": "Margin expansion",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "Sytech",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9",
+        "jukan05"
+      ],
+      "layer": "L2b_PCB",
+      "role": "CCL Manufacturer",
+      "target": "Margin expansion",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "Asia Metal",
+      "stars": 1,
+      "accounts": [
+        "zephyr_z9",
+        "jukan05"
+      ],
+      "layer": "L2b_PCB",
+      "role": "Prepreg Equipment",
+      "target": "Fully booked Q1 28",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "Samsung",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L1_Memory",
+      "role": "Memory / Helium Crisis",
+      "target": "Crisis-driven",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "SK Hynix",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L1_Memory",
+      "role": "Memory / Helium Crisis",
+      "target": "Crisis-driven",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "TSMC",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "Advanced Packaging",
+      "target": "Fully booked 2026",
+      "priority": "HIGH"
+    },
+    {
+      "ticker": "Seagate",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L1_Memory",
+      "role": "HDD Storage",
+      "target": "20-30% price hike",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "WDC",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L1_Memory",
+      "role": "HDD Storage",
+      "target": "20-30% price hike",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Air Products",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L3_Materials",
+      "role": "Industrial Gas",
+      "target": "Rerouted contracts",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Linde",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L3_Materials",
+      "role": "Industrial Gas",
+      "target": "Rerouted contracts",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "Pulsar Helium",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L3_Materials",
+      "role": "Helium Exploration",
+      "target": "Speculative",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "Helium One",
+      "stars": 1,
+      "accounts": [
+        "jukan05"
+      ],
+      "layer": "L3_Materials",
+      "role": "Helium Exploration",
+      "target": "Speculative",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "HIMX",
+      "stars": 1,
+      "accounts": [
+        "citrini"
+      ],
+      "layer": "L2a_Optical",
+      "role": "CPO / Display Driver",
+      "target": "CPO adoption",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "LLY",
+      "stars": 1,
+      "accounts": [
+        "citrini"
+      ],
+      "layer": "L7_Healthcare",
+      "role": "GLP-1 / Healthcare",
+      "target": "Large cap",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "ARM",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L1_Compute",
+      "role": "AI CPU",
+      "target": "5x revenue growth",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "AEHR",
+      "stars": 1,
+      "accounts": [
+        "aleabitoreddit"
+      ],
+      "layer": "L2a_Optical",
+      "role": "Testing Equipment",
+      "target": "Early stage",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "HUT",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L3_Power",
+      "role": "Data Center / Bitcoin",
+      "target": "Pivot play",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "ASML",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L3_Machines",
+      "role": "EUV Machines",
+      "target": "Long-term",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "BESI",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "Hybrid Bonding",
+      "target": "Multi-year",
+      "priority": "MEDIUM"
+    },
+    {
+      "ticker": "INTC",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "EMIB-T / Packaging",
+      "target": "Turnaround",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "SMHN",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "CoWoS Packaging",
+      "target": "Small cap",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "LPK",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L2b_Packaging",
+      "role": "Laser / Electronics",
+      "target": "Small cap",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "MSFT",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L1_Compute",
+      "role": "AI Cloud / AMD Partner",
+      "target": "Long-term",
+      "priority": "LOW"
+    },
+    {
+      "ticker": "ORCL",
+      "stars": 1,
+      "accounts": [
+        "HyperTechInvest"
+      ],
+      "layer": "L1_Compute",
+      "role": "AMD Customer",
+      "target": "Hold",
+      "priority": "LOW"
+    }
+  ],
+  "photonics_12_layer": [
+    {
+      "phase": "P1: The Earth",
+      "layer": "L0",
+      "name": "Raw Indium",
+      "leader": "China (60-70% global)",
+      "monopoly": "\ud83d\udd34 HARD",
+      "geopolitical_risk": "HIGH"
+    },
+    {
+      "phase": "P1: The Earth",
+      "layer": "L1",
+      "name": "InP Substrates",
+      "leader": "AXTI (60-70%, Beijing)",
+      "monopoly": "\ud83d\udfe1 NEAR",
+      "geopolitical_risk": "MEDIUM"
+    },
+    {
+      "phase": "P1: The Earth",
+      "layer": "L1B",
+      "name": "Glass Substrates",
+      "leader": "GLW (Corning)",
+      "monopoly": "\ud83d\udfe1 Near",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P1: The Earth",
+      "layer": "L1C",
+      "name": "TGV Drilling",
+      "leader": "LPK.DE (LPKF Laser)",
+      "monopoly": "\ud83d\udfe1 Near-West",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P2: Laser War",
+      "layer": "L3",
+      "name": "200G EML",
+      "leader": "LITE (Lumentum) \u2014 ONLY vol shipper",
+      "monopoly": "\ud83d\udd34 HARD",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P2: Laser War",
+      "layer": "L4",
+      "name": "CW Lasers",
+      "leader": "SIVE, AAOI, POET",
+      "monopoly": "\ud83d\udfe0 Contested",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P3: Engineering",
+      "layer": "L4C",
+      "name": "MEMS Timing",
+      "leader": "SITM (SiTime) \u2014 150%+ growth 7q",
+      "monopoly": "\ud83d\udfe1 NEAR",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P3: Engineering",
+      "layer": "L4F",
+      "name": "Connectors",
+      "leader": "TEL, APH",
+      "monopoly": "\ud83d\udfe0 Oligopoly",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P4: Foundry",
+      "layer": "L5",
+      "name": "SiPh Simulation",
+      "leader": "SNPS, ANSS",
+      "monopoly": "\ud83d\udfe1 NEAR",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P4: Foundry",
+      "layer": "L6",
+      "name": "Photonics-SOI",
+      "leader": "Soitec",
+      "monopoly": "\ud83d\udd34 HARD",
+      "geopolitical_risk": "MEDIUM"
+    },
+    {
+      "phase": "P5: Module",
+      "layer": "L9",
+      "name": "Switch Silicon",
+      "leader": "AVGO (Tomahawk 6), MRVL (Teralynx)",
+      "monopoly": "\ud83d\udfe1 NEAR",
+      "geopolitical_risk": "LOW"
+    },
+    {
+      "phase": "P6: Invisible",
+      "layer": "L12",
+      "name": "Firmware Lock-in",
+      "leader": "AVGO, MRVL",
+      "monopoly": "\ud83d\udfe0 Duopoly",
+      "geopolitical_risk": "LOW"
+    }
+  ],
+  "catalyst_timeline": [
+    {
+      "quarter": "Q2 2026",
+      "ticker": "Samsung / SK Hynix",
+      "event": "Earnings + helium crisis impact",
+      "source": "jukan05",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q2 2026",
+      "ticker": "QCOM",
+      "event": "Smartphone bottoming + photonics",
+      "source": "ParadisLabs",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q2 2026",
+      "ticker": "NBIS / PLUG / POET",
+      "event": "May earnings",
+      "source": "ParadisLabs",
+      "priority": "LOW"
+    },
+    {
+      "quarter": "Q3 2026",
+      "ticker": "AAOI",
+      "event": "CPO revenue ramp",
+      "source": "jukan05",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q3 2026",
+      "ticker": "AXTI",
+      "event": "Pricing power validation",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q3 2026",
+      "ticker": "ASTS",
+      "event": "SpaceX launches",
+      "source": "ParadisLabs",
+      "priority": "MEDIUM"
+    },
+    {
+      "quarter": "Q4 2026",
+      "ticker": "SIVE",
+      "event": "CPO mass production inflection",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q4 2026",
+      "ticker": "AAOI",
+      "event": "Earnings ramp Q3-Q4",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "Q4 2026",
+      "ticker": "PL",
+      "event": "Merlin constellation launch",
+      "source": "ParadisLabs",
+      "priority": "LOW"
+    },
+    {
+      "quarter": "2026",
+      "ticker": "Fujibo",
+      "event": "Mass production inflection",
+      "source": "zephyr_z9",
+      "priority": "MEDIUM"
+    },
+    {
+      "quarter": "2026",
+      "ticker": "Nabtesco",
+      "event": "Humanoid robot mass production",
+      "source": "zephyr_z9",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "2026",
+      "ticker": "EMC / TUC / Asia Metal",
+      "event": "Equipment delivery, price hikes",
+      "source": "zephyr_z9/jukan05",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "2027",
+      "ticker": "SIVE",
+      "event": "$500M revenue (2028), $1B (2029)",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "2027",
+      "ticker": "MRVL",
+      "event": "CPO revenue recognition",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "2027",
+      "ticker": "AMD",
+      "event": "$2T valuation potential",
+      "source": "HyperTechInvest",
+      "priority": "HIGH"
+    },
+    {
+      "quarter": "2027-28",
+      "ticker": "SIVE",
+      "event": "M&A by AVGO / MRVL",
+      "source": "aleabitoreddit",
+      "priority": "HIGH"
+    }
+  ],
+  "ma_watchlist": [
+    {
+      "target": "SIVE",
+      "current_mcap": "~$290M",
+      "potential_acquirer": "AVGO / MRVL",
+      "probability": "HIGH",
+      "catalyst": "CPO mass production 2027"
+    },
+    {
+      "target": "AXTI",
+      "current_mcap": "~$1-2B",
+      "potential_acquirer": "COHR / Photonics giants",
+      "probability": "MEDIUM",
+      "catalyst": "Pricing power demonstration"
+    },
+    {
+      "target": "CRDO",
+      "current_mcap": "Small cap",
+      "potential_acquirer": "Optical interconnect consolidator",
+      "probability": "MEDIUM",
+      "catalyst": "Revenue ramp"
+    },
+    {
+      "target": "Small CCL",
+      "current_mcap": "Various",
+      "potential_acquirer": "Large packaging companies",
+      "probability": "LOW-MED",
+      "catalyst": "Margin expansion"
+    }
+  ],
+  "risk_flags": [
+    {
+      "flag": "\ud83d\udd34 Iran / Middle East",
+      "trigger": "Escalation",
+      "impact": "Oil shock, rare earths, helium crisis",
+      "mitigation": "Doomsday ETF: FAZ, GUSH, SQQQ, UVIX"
+    },
+    {
+      "flag": "\ud83d\udd34 China / Taiwan",
+      "trigger": "Tension",
+      "impact": "Semiconductor supply chain disruption",
+      "mitigation": "Japan supply chain exposure"
+    },
+    {
+      "flag": "\ud83d\udd34 Qatar Helium",
+      "trigger": "Supply disruption",
+      "impact": "65% Samsung/SK Hynix helium source at risk",
+      "mitigation": "4-month buffer, Linde/Air Products reroute"
+    },
+    {
+      "flag": "\ud83d\udd34 Hyperscaler Capex Cut",
+      "trigger": "50% demand cut",
+      "impact": "Memory, optical demand destruction",
+      "mitigation": "Structural shortage = resilient"
+    },
+    {
+      "flag": "\ud83d\udd34 Nvidia Design Fail",
+      "trigger": "Rubin/Ultra redesign",
+      "impact": "Delayed ramp, PCB/interconnect delay",
+      "mitigation": "CCL delay = CCL players buffer"
+    }
+  ],
+  "institutional_rotation": [
+    {
+      "phase": 1,
+      "timeline": "2023-2024",
+      "theme": "HBM / Memory",
+      "tickers": [
+        "MU",
+        "Samsung",
+        "SK Hynix"
+      ],
+      "status": "\u2705 DONE"
+    },
+    {
+      "phase": 2,
+      "timeline": "2024-2025",
+      "theme": "Optical Transceivers",
+      "tickers": [
+        "AAOI",
+        "AXTI",
+        "LITE",
+        "COHR"
+      ],
+      "status": "\ud83d\udd04 NOW"
+    },
+    {
+      "phase": 3,
+      "timeline": "2025-2026",
+      "theme": "External Light / SiPh",
+      "tickers": [
+        "SIVE",
+        "SiPhonics",
+        "ELSFPs"
+      ],
+      "status": "\ud83c\udfaf NEXT"
+    },
+    {
+      "phase": 4,
+      "timeline": "2026-2027",
+      "theme": "Full CPO Integration",
+      "tickers": [
+        "MRVL",
+        "AVGO",
+        "Celestial AI"
+      ],
+      "status": "\ud83d\udd2e FUTURE"
+    },
+    {
+      "phase": 5,
+      "timeline": "2026-2027",
+      "theme": "PCB / Interconnect",
+      "tickers": [
+        "Fujibo",
+        "EMC",
+        "TUC",
+        "ITEQ",
+        "Sytech"
+      ],
+      "status": "\ud83d\udd2e FUTURE"
+    },
+    {
+      "phase": 6,
+      "timeline": "2027-2028",
+      "theme": "Chipmaking Machines",
+      "tickers": [
+        "ASML",
+        "BESI",
+        "SMHN",
+        "LPK"
+      ],
+      "status": "\ud83d\udd2e FUTURE"
+    },
+    {
+      "phase": 7,
+      "timeline": "2028+",
+      "theme": "Power / Robotics",
+      "tickers": [
+        "ETN",
+        "LNG",
+        "Nabtesco",
+        "THK"
+      ],
+      "status": "\ud83d\udd2e FUTURE"
+    }
+  ],
+  "entry_prices": [
+    {
+      "ticker": "AXTI",
+      "account": "aleabitoreddit",
+      "entry": "~$32",
+      "size": "Large conviction",
+      "return": "+158% ($32\u2192$82.56)"
+    },
+    {
+      "ticker": "SIVE",
+      "account": "aleabitoreddit",
+      "entry": "~$290M mcap",
+      "size": "0.5-1% portfolio",
+      "return": "High volatility"
+    },
+    {
+      "ticker": "AAOI",
+      "account": "aleabitoreddit",
+      "entry": "~$84",
+      "size": "Decent amount",
+      "return": "Extreme volatility"
+    },
+    {
+      "ticker": "RPI",
+      "account": "aleabitoreddit",
+      "entry": "Early call",
+      "size": "Fun trade",
+      "return": "+44.76% single day"
+    },
+    {
+      "ticker": "LITE",
+      "account": "PhotonCap",
+      "entry": "\u2014",
+      "size": "Top 5 Account 1",
+      "return": "+85.7%"
+    },
+    {
+      "ticker": "FORM",
+      "account": "PhotonCap",
+      "entry": "\u2014",
+      "size": "Largest Account 1",
+      "return": "\u2014"
+    }
+  ],
+  "nvidia_playbook": {
+    "description": "Nvidia $2B capacity lock-in playbook \u2014 exact same as last year securing EML capacity before supply shock",
+    "investments": [
+      {
+        "amount": "$2B",
+        "target": "COHR",
+        "purpose": "Optical components"
+      },
+      {
+        "amount": "$2B",
+        "target": "LITE",
+        "purpose": "200G EML lasers"
+      },
+      {
+        "amount": "$2B",
+        "target": "MRVL",
+        "purpose": "CPO ASIC / custom silicon"
+      }
+    ],
+    "implication": "$SIVE and other CPO tickers will experience same capacity lock-in dynamics"
+  },
+  "behavioral_macro": {
+    "risk_on_trigger": "Extreme negative sentiment, panic, fear, high cash levels",
+    "risk_off_trigger": "Extreme speculative behavior, casino behavior, meme stock frenzy, short-dated options gambling",
+    "bond_traders_asleep": "Bond market pricing disinflation but structural inflation pressure high \u2192 yields too low",
+    "sentiment_extremes": {
+      "source": "AAII + Put/Call + VIX + Fear&Greed",
+      "range": [
+        -1,
+        1
+      ],
+      "interpretation": "-1=extreme fear (RISK-ON), +1=extreme greed (RISK-OFF)"
+    },
+    "key_quotes": [
+      "People are so extremely negative that it gives me even more confidence \u2014 Nov 2022",
+      "Bond traders are asleep \u2014 Sep 2025 (CPI > 3.5% \u2192 3.8% confirmed)",
+      "The stock market has become a casino full of gamblers \u2014 Jul 2025",
+      "To be a good student of financial history it certainly helps in not making the same mistake over"
+    ]
+  }
+}
