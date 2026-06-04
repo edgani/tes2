@@ -253,15 +253,6 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
         _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls)
         if _fig is not None:
             st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
-            if _walls:
-                st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
-                           "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
-                           "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
-                           "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
-            else:
-                st.caption("🗺️ **Cara baca:** sumbu-X = harga · band = TRADE/TREND/TAIL Risk Range · "
-                           "**X** = Entry (ijo) / Target (biru) / SL (merah). "
-                           "Market ini gak punya listed options — positioning pakai COT / bandarmetrics di bawah.")
       except Exception:
         pass
 
@@ -1038,7 +1029,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s34"
+_CARD_BUILD = "s35"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):

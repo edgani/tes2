@@ -696,7 +696,7 @@ def _plotly_asset_pulse(snap, prices):
         xaxis={"gridcolor": "#21262d", "tickfont": {"size": 7, "color": "#8b949e"},
                "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
         yaxis={"gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#c9d1d9"}},
-        showlegend=False, height=88,
+        showlegend=False, height=62,
     )
     return fig
 

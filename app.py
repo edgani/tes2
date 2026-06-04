@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s34 — Alpha Center: HARD alpha-realness gate (only asymmetric multi-bag ≥100% / bottleneck stays; large-cap/<100% auto-demoted to market tab w/ note) + per-ticker READINESS score (🚨READY/⚡SOON/👀BUILDING/⏳WAIT) + sortable by readiness · Frontrun BOARDING now requires active regime timing (truly imminent)")
+    st.caption("v40 · build 2026-06-03-s35 — dashboard FORCED compact for 1-frame (top padding 2.6→1.3rem, gaps tightened, quad-map 190→140px, asset-pulse 88→62px, big header → 1-line) + removed repeating 'Cara baca' legend from EVERY card (all tabs) — readiness badge stays in card header")
     st.divider()
     
     page = st.radio("Navigation", [

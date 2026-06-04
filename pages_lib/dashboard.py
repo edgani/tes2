@@ -7,14 +7,21 @@ def render(snap: dict):
     # Tight layout so the whole dashboard fits ~one frame. The biggest win is killing Streamlit's
     # default ~6rem block-container top padding; then we tighten every gap/margin.
     st.markdown("""<style>
-    .block-container{padding-top:2.6rem !important;padding-bottom:0.5rem !important;}
-    [data-testid="stVerticalBlock"]{gap:0.4rem !important;}
-    [data-testid="stHorizontalBlock"]{gap:0.55rem !important;}
-    [data-testid="stMetric"]{padding:2px 0 !important;}
+    .block-container{padding-top:1.3rem !important;padding-bottom:0.2rem !important;max-width:100% !important;}
+    [data-testid="stVerticalBlock"]{gap:0.22rem !important;}
+    [data-testid="stHorizontalBlock"]{gap:0.4rem !important;}
+    [data-testid="stMetric"]{padding:0 !important;}
+    [data-testid="stMetricValue"]{font-size:1.05rem !important;line-height:1.1 !important;}
+    [data-testid="stMetricLabel"]{font-size:0.6rem !important;}
+    [data-testid="stMetricLabel"] p{font-size:0.6rem !important;}
     .element-container{margin-bottom:0 !important;}
-    [data-testid="stMarkdownContainer"] p{margin-bottom:0.15rem !important;}
-    hr{margin:0.3rem 0 !important;}
-    h1,h2,h3{margin-top:0.2rem !important;margin-bottom:0.3rem !important;padding-top:0 !important;}
+    [data-testid="stMarkdownContainer"] p{margin-bottom:0.08rem !important;font-size:0.82rem !important;}
+    [data-testid="stCaptionContainer"]{margin:0 !important;}
+    [data-testid="stCaptionContainer"] p{font-size:0.72rem !important;margin:0 !important;}
+    .stPlotlyChart{margin:0 !important;}
+    [data-testid="stExpander"]{margin:0 !important;}
+    hr{margin:0.15rem 0 !important;}
+    h1,h2,h3,h4{margin-top:0.05rem !important;margin-bottom:0.15rem !important;padding-top:0 !important;}
     </style>""", unsafe_allow_html=True)
     try:
         from pages_lib._dashboard_legacy import render as _legacy_render
@@ -105,7 +112,7 @@ def _quad_map_figure(qe: dict):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-        margin={"t": 8, "b": 28, "l": 44, "r": 10}, height=190, showlegend=False,
+        margin={"t": 8, "b": 28, "l": 44, "r": 10}, height=140, showlegend=False,
         xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},
@@ -125,8 +132,7 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
         return
 
     if not in_tab:
-        st.divider()
-        st.markdown("#### 🧭 Quad Decoder — kenapa, apa yang ngubah, ke mana")
+        st.markdown("<div style='font-size:0.95rem;font-weight:700;margin:0 0 2px;'>🧭 Quad Decoder — kenapa · apa yang ngubah · ke mana</div>", unsafe_allow_html=True)
 
     wig = qe.get("where_it_goes", {})
     stage = wig.get("stage", "—")
