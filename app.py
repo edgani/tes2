@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s31 — removed duplicate Expected-Move/PC-OI/COT charts (merged into setup box) + Quad Decoder restructure (explanation inside box, simpler, map bigger) + fixed title clip + de-overlapped quad-map labels")
+    st.caption("v40 · build 2026-06-03-s32 — confirmed dup Expected-Move/PC-OI/COT charts merged into setup box (numbers live in the box text; charts no longer drawn) + stripped now-dead chart fns for zero residue · Quad Decoder restructure intact")
     st.divider()
     
     page = st.radio("Navigation", [

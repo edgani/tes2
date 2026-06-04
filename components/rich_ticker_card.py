@@ -174,99 +174,6 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True):
     return fig
 
 
-def _expected_move_chart(px, em_pct, target, entry):
-    """Compact DARK expected-move cone (±1σ / ±2σ) vs target distance."""
-    import plotly.graph_objects as go
-    try:
-        em = float(em_pct)
-        px = float(px)
-    except (TypeError, ValueError):
-        return None
-    if em <= 0 or px <= 0:
-        return None
-    fig = go.Figure()
-    # Normalize expected move to PERCENT — accept either a fraction (0.10) or a percent (10.0).
-    emp = em * 100.0 if em < 1.0 else em
-    fig.add_hrect(y0=-emp, y1=emp, fillcolor="rgba(210,153,34,0.16)", line_width=0, layer="below")      # ±1σ
-    fig.add_hrect(y0=-2 * emp, y1=2 * emp, fillcolor="rgba(248,81,73,0.07)", line_width=0, layer="below")  # ±2σ
-    try:
-        if target and entry and float(entry) > 0:
-            dist = (float(target) - float(entry)) / float(entry) * 100
-            fig.add_hline(y=dist, line_color="#3FB950", line_dash="dash", line_width=2,
-                          annotation_text=f"Target {dist:+.1f}%", annotation_position="right",
-                          annotation_font={"size": 9, "color": "#3FB950"})
-    except (TypeError, ValueError):
-        pass
-    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 0], mode="lines", line={"color": "#E6EDF3", "width": 3}, showlegend=False))
-    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
-                      margin={"t": 28, "b": 10, "l": 40, "r": 72},
-                      title={"text": f"Expected move ±{emp:.1f}% (1σ) / ±{2*emp:.1f}% (2σ)", "font": {"size": 11, "color": "#c9d1d9"}},
-                      xaxis={"showgrid": False, "showticklabels": False, "zeroline": False},
-                      yaxis={"title": {"text": "% move", "font": {"size": 9, "color": "#8b949e"}},
-                             "range": [-2.6 * emp, 2.6 * emp],
-                             "gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"}})
-    return fig
-
-
-def _pc_oi_chart(opts, cur="$"):
-    """Compact DARK put/call OI bars + P/C ratio in title."""
-    import plotly.graph_objects as go
-    opts = opts or {}
-    tc, tp = opts.get("total_call_oi"), opts.get("total_put_oi")
-    pc = opts.get("put_call_ratio") or opts.get("pc_ratio")
-    if not (tc or tp or pc):
-        return None
-    if pc is None and tc and tp:
-        try:
-            pc = float(tp) / float(tc) if float(tc) else None
-        except (TypeError, ValueError):
-            pc = None
-    fig = go.Figure(go.Bar(x=["Call OI", "Put OI"], y=[tc or 0, tp or 0],
-                           marker_color=["#3FB950", "#F85149"],
-                           text=[f"{(tc or 0):,.0f}", f"{(tp or 0):,.0f}"],
-                           textposition="outside", textfont={"size": 10, "color": "#E6EDF3"}))
-    title = "Put/Call OI" + (f" · P/C {pc:.2f}" if pc else "")
-    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
-                      margin={"t": 28, "b": 10, "l": 38, "r": 10},
-                      title={"text": title, "font": {"size": 11, "color": "#c9d1d9"}},
-                      xaxis={"showgrid": False, "tickfont": {"color": "#8b949e"}},
-                      yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}})
-    return fig
-
-
-def _cot_bar(cot):
-    """Compact DARK COT net positioning: non-commercial (specs) vs commercial (hedgers)."""
-    import plotly.graph_objects as go
-    cot = cot or {}
-    nc = (cot.get("noncomm_net") or cot.get("non_commercial_net") or
-          cot.get("noncommercial_net") or cot.get("net_position"))
-    cm = cot.get("comm_net") or cot.get("commercial_net")
-    labels, vals, colors = [], [], []
-    for v, lbl, pos_c, neg_c in [(nc, "Non-comm (specs)", "#58A6FF", "#F0883E"),
-                                 (cm, "Commercial (hedgers)", "#3FB950", "#F85149")]:
-        if v is not None:
-            try:
-                fv = float(v)
-            except (TypeError, ValueError):
-                continue
-            labels.append(lbl); vals.append(fv); colors.append(pos_c if fv >= 0 else neg_c)
-    if not vals:
-        return None
-    fig = go.Figure(go.Bar(x=labels, y=vals, marker_color=colors,
-                           text=[f"{v:+,.0f}" for v in vals], textposition="outside",
-                           textfont={"size": 10, "color": "#E6EDF3"}))
-    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
-                      margin={"t": 28, "b": 10, "l": 42, "r": 10},
-                      title={"text": "COT net positioning", "font": {"size": 11, "color": "#c9d1d9"}},
-                      xaxis={"showgrid": False, "tickfont": {"color": "#8b949e", "size": 9}},
-                      yaxis={"gridcolor": "#21262d", "zeroline": True, "zerolinecolor": "#30363d",
-                             "tickfont": {"color": "#8b949e"}})
-    return fig
-
-
 def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     """DARK chart in the real bandarmetrics.com style (attachment 4): candlesticks + LPM line
     overlay (secondary axis) / Intensity panel / Vol Rotation panel."""
@@ -1131,7 +1038,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s31"
+_CARD_BUILD = "s32"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
