@@ -650,3 +650,37 @@ real issues were live in s29:
   — the big win — cut Streamlit's default ~6rem `.block-container` top padding to 1.2rem; tightened
   all gaps/margins/headers. Removed the redundant "## 🏠 Macro Dashboard" header.
 Card marker → card·s30.
+
+---
+
+# SESSION 31 — merged duplicate charts into setup box + Quad Decoder restructure + methodology spot-check
+
+THE MERGE user kept asking for (finally understood from circled screenshots): the Expected-Move chart +
+Put/Call-OI chart (+ COT bar) rendered BELOW the setup box were pure duplication — every number they
+showed (expected move %, P/C ratio, COT net) is already in the setup box text (verified: by_expiry
+line 1707, COT line 1718, PCR line 1721). REMOVED those mini-charts from render_detail_charts
+(companions). Bandarmetrics candlestick (IHSG) kept — that one is NOT a duplicate.
+
+DASHBOARD:
+- Quad Decoder header was clipping at the top (s30 padding-top:1.2rem too tight → went under Streamlit
+  toolbar). Bumped block-container padding-top to 2.6rem.
+- Restructured the Quad Decoder: map + explanation now live in ONE bordered st.container (no loose text
+  floating below the map); explanation simplified to compact captions (structural+name+why one line,
+  Pindah one line, action-hint+catalyst merged into one caption). Calendar in its own bordered box
+  beside it. Quad map height 150→190 to fill the box and balance the calendar.
+- Quad-map labels de-overlapped: quad NAME labels moved to the top of each quadrant (was center+0.34,
+  collided with the centered horizon markers); Monthly marker label moved below its marker.
+
+METHODOLOGY SPOT-CHECK vs Deep-Dive Master Document v3.0 (the numbers that are checkable):
+- VIX buckets: EXACT match — 9-19 Investable (1.0x, <13 → 1.2x), 20-29 Chop (0.5x), 29+ F*ck (0.1x).
+- GEX formula: EXACT match — gamma × OI × contract_size × spot² × 0.01.
+- Quad math: matches — Q1 +g−i, Q2 +g+i, Q3 −g+i, Q4 −g−i (gip_engine line 240-241).
+- Quad asset winners: match — Q2→energy/financials/commodities/cyclicals/value, Q4→bonds/utilities/
+  staples/gold (chain_reaction_v2 line 350/365).
+- Equities position cap 6%: enforced (hedgeye_position_sizing line 89).
+- CAVEAT (honest): gip_engine's tuning constants (Q3_HOT_INFL_THRESH, Q3_MONTHLY_MOD, q3_modifier tanh
+  scaling) are calibrated to the CURRENT Hedgeye reading, explicitly NOT out-of-sample validated (the
+  code says so at line 27). Structure is correct; the specific weights remain unvalidated until the
+  validate_*.py scripts are run on real data. Full per-asset envelope (FX 12%, FI 10%, Comm 4%) — only
+  the equities 6% cap is explicitly enforced.
+Card marker → card·s31.

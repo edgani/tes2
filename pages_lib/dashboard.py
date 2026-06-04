@@ -7,7 +7,7 @@ def render(snap: dict):
     # Tight layout so the whole dashboard fits ~one frame. The biggest win is killing Streamlit's
     # default ~6rem block-container top padding; then we tighten every gap/margin.
     st.markdown("""<style>
-    .block-container{padding-top:1.2rem !important;padding-bottom:0.5rem !important;}
+    .block-container{padding-top:2.6rem !important;padding-bottom:0.5rem !important;}
     [data-testid="stVerticalBlock"]{gap:0.4rem !important;}
     [data-testid="stHorizontalBlock"]{gap:0.55rem !important;}
     [data-testid="stMetric"]{padding:2px 0 !important;}
@@ -72,7 +72,8 @@ def _quad_map_figure(qe: dict):
         fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, line={"width": 0},
                       fillcolor=_QM_FILL[q], layer="below")
         cx, cy = _QM_CENTER[q]
-        fig.add_annotation(x=cx, y=cy + 0.34, text=_QM_NAME[q], showarrow=False,
+        _nx, _ny = {"Q1": (-0.5, 0.88), "Q2": (0.5, 0.88), "Q3": (0.5, -0.12), "Q4": (-0.5, -0.12)}[q]
+        fig.add_annotation(x=_nx, y=_ny, text=_QM_NAME[q], showarrow=False,
                            font={"size": 10, "color": "#8b949e"})
     # zero axes
     fig.add_shape(type="line", x0=0, x1=0, y0=-1, y1=1, line={"color": "#30363d", "width": 1})
@@ -92,7 +93,7 @@ def _quad_map_figure(qe: dict):
                            arrowcolor="#f0b429", opacity=0.85)
     for k, sym, col, lbl, tp, q in [
         ("S", "circle-open", "#e6edf3", "Structural", "bottom center", sq),
-        ("M", "x", "#39d0d8", "Monthly", "top center", mq),
+        ("M", "x", "#39d0d8", "Monthly", "bottom center", mq),
         ("G", "diamond-open", "#f0b429", "Global", "middle right", gq),
     ]:
         px_, py_ = pos[k]
@@ -104,7 +105,7 @@ def _quad_map_figure(qe: dict):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-        margin={"t": 8, "b": 28, "l": 44, "r": 10}, height=150, showlegend=False,
+        margin={"t": 8, "b": 28, "l": 44, "r": 10}, height=190, showlegend=False,
         xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},
@@ -139,37 +140,42 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     c3.metric("Monthly (leading)", qe.get("monthly_quad", "?"), qe.get("monthly_name", ""))
     c4.metric("Global (50-country)", qe.get("global_quad", "?"), qe.get("global_name", ""))
 
-    # ── Quad Map + explanation folded under it (left, "in the curve") | Economic Calendar (right) ──
+    # ── Quad Decoder box (map + simplified explanation, all in ONE bordered box) | Economic Calendar ──
     mcol, ecol = st.columns([1.35, 1])
     with mcol:
-        try:
-            st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
-        except Exception:
-            pass
-        st.markdown(f"**Kenapa {qe.get('structural_quad','')}:** {qe.get('why','')}")
-        wc = qe.get("what_changes", [])
-        if wc:
-            _trg = " · ".join(f"**{w['to']}** kalau {w['trigger']}" for w in wc)
-            st.markdown(f"**Pindah:** {_trg}")
-        if wig.get("action_hint"):
-            st.markdown(f"🎯 **{wig['action_hint']}**")
-        try:
-            from pages_lib._dashboard_legacy import _catalyst_monitor_v2
-            _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
-                                            mq=qe.get("monthly_quad", "Q2"),
-                                            next_q=wig.get("implied_next", "Q2"))
-            if _cats:
-                _crow = " · ".join(f"{_e} {_n}" for _n, _v, _e, _d, _im in _cats[:5])
-                st.caption(f"⚡ **Catalyst (pemicu pindah quad):** {_crow}")
-        except Exception:
-            pass
+        with st.container(border=True):
+            try:
+                st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
+            except Exception:
+                pass
+            # compact explanation, folded INSIDE the box (no loose text floating below the map)
+            st.markdown(f"**{qe.get('structural_quad','')} · {qe.get('structural_name','')}** — {qe.get('why','')}")
+            wc = qe.get("what_changes", [])
+            if wc:
+                _trg = " · ".join(f"→**{w['to']}** {w['trigger']}" for w in wc)
+                st.caption(f"**Pindah:** {_trg}")
+            _hint = wig.get("action_hint")
+            try:
+                from pages_lib._dashboard_legacy import _catalyst_monitor_v2
+                _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
+                                                mq=qe.get("monthly_quad", "Q2"),
+                                                next_q=wig.get("implied_next", "Q2"))
+                _crow = " · ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
+            except Exception:
+                _crow = ""
+            _line = (f"🎯 **{_hint}**" if _hint else "")
+            if _crow:
+                _line = (_line + "  ·  " if _line else "") + f"⚡ {_crow}"
+            if _line:
+                st.caption(_line)
     with ecol:
-        try:
-            from pages_lib._dashboard_legacy import _economic_calendar_mini
-            st.markdown(_economic_calendar_mini(sq=qe.get("structural_quad", "Q3"),
-                                                mq=qe.get("monthly_quad", "Q2")), unsafe_allow_html=True)
-        except Exception:
-            pass
+        with st.container(border=True):
+            try:
+                from pages_lib._dashboard_legacy import _economic_calendar_mini
+                st.markdown(_economic_calendar_mini(sq=qe.get("structural_quad", "Q3"),
+                                                    mq=qe.get("monthly_quad", "Q2")), unsafe_allow_html=True)
+            except Exception:
+                pass
 
     with st.expander("📖 Detail — playbook per-quad + skenario Ricky", expanded=False):
         pb = qe.get("playbook", {})

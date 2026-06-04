@@ -361,24 +361,9 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
     if part not in ("all", "companions"):
         return
 
-    # companion mini-charts (data-gated): expected move · P/C OI · COT
-    try:
-        _em = _opts_c.get("expected_move_pct") or _opts_c.get("expected_move")
-        _tr = rr.get("trade", {}) or {}
-        _cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
-        _cot_t = _cot_map.get(ticker, {}) if isinstance(_cot_map, dict) else {}
-        _figs = []
-        for _f in (_expected_move_chart(px, _em, _tr.get("trr"), _tr.get("lrr")),
-                   _pc_oi_chart(_opts_c, _cur_for(market_key, ticker)), _cot_bar(_cot_t)):
-            if _f is not None:
-                _figs.append(_f)
-        if _figs:
-            _cols = st.columns(len(_figs))
-            for _col, _f in zip(_cols, _figs):
-                with _col:
-                    st.plotly_chart(_f, width='stretch', config={"displayModeBar": False})
-    except Exception:
-        pass
+    # NOTE: the expected-move / Put-Call-OI / COT mini-charts used to render here, but every number
+    # they showed (expected move %, P/C ratio, COT net) is already in the setup box text above. They
+    # were pure duplication, so they're merged into the setup box (removed here) per user request.
 
     # Bandarmetrics chart (candlestick + LPM + Intensity + Vol Rotation) — IHSG ONLY
     try:
@@ -1146,7 +1131,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s30"
+_CARD_BUILD = "s31"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
