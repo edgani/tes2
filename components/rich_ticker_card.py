@@ -1038,35 +1038,15 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s32"
+_CARD_BUILD = "s34"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
     """Compact extras folded INTO the single ticker block (no expander).
-    Setup box already carries Dealer/Vanna-charm/Dark-pool/COT, so here we add: a date-based
-    Vanna/Charm OPEX window (equity+crypto), On-Chain (crypto), and the OI heatmap (forex/commodity —
-    FX is honest N/A→COT, commodity uses real ETF-proxy OI, no fake call/put walls)."""
+    Vanna/Charm OPEX timing + On-Chain are now MERGED into the setup box text above (no duplicate
+    captions here). Only the forex/commodity OI heatmap remains — FX is honest N/A→COT, commodity
+    uses real ETF-proxy OI, no fake call/put walls."""
     import streamlit as st
-    if market_key in ("us_equity", "crypto") and show_options:
-        try:
-            opts_map = snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {}
-            opts = opts_map.get(ticker, {}) if isinstance(opts_map, dict) else {}
-            fund = (snap.get("fundamentals", {}) or {}).get(ticker, {})
-            from engines.options_greeks_engine import build_options_intelligence
-            intel = build_options_intelligence(ticker, opts, px or rr.get("px"), fund)
-            cal = intel["opex_calendar"]; vc = cal["vanna_charm_window"]
-            st.caption(f"\U0001f5d3\ufe0f **Vanna/Charm:** OPEX {cal['current_opex']} ({cal['days_to_opex']}d) \u00b7 {vc['note']}")
-        except Exception:
-            pass
-    if market_key == "crypto" and show_onchain:
-        try:
-            oc_map = snap.get("crypto_tokens", {}) or snap.get("onchain_data", {}) or {}
-            oc = oc_map.get(ticker, {}) if isinstance(oc_map, dict) else {}
-            oc_text = _onchain_narrative(oc, ticker)
-            if oc_text:
-                st.caption("\u26d3\ufe0f **On-Chain:** " + oc_text.replace("\n", " "))
-        except Exception:
-            pass
     # OI heatmap for forex/commodities (per spec) — FX honest N/A→COT, commodity real ETF-proxy OI, no fake walls
     if market_key in ("forex", "commodity"):
         try:
@@ -1466,13 +1446,16 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         try:
             from engines.options_greeks_engine import build_options_intelligence
             intel = build_options_intelligence(ticker, od, px, {})
-            vcw = intel.get("opex_calendar", {}).get("vanna_charm_window", {})
-            dto = intel.get("opex_calendar", {}).get("days_to_opex")
+            _oc_cal = intel.get("opex_calendar", {})
+            vcw = _oc_cal.get("vanna_charm_window", {})
+            dto = _oc_cal.get("days_to_opex")
+            opx = _oc_cal.get("current_opex")
             stt = vcw.get("status", "")
             if stt == "WINDOW_ACTIVE_BUILDING": vc = f"Vanna tailwind aktif ({dto}d ke OPEX) → kalau vol turun dealer beli → drift bullish, pin ke call wall/max pain"
             elif stt == "CHARM_MAX": vc = f"Charm max ({dto}d ke OPEX) → pinning ke max pain {f(maxpain) if maxpain else ''}; gerakan terbatas s/d expiry"
             elif stt == "POST_OPEX": vc = "Post-OPEX → gamma reset, posisi unwinding → window gerakan baru (vol naik)"
             elif stt == "PRE_WINDOW": vc = f"Pre-vanna window ({dto}d ke OPEX) — efek vanna/charm belum dominan"
+            if vc and opx: vc = f"{vc} · OPEX {opx}"
             if intel.get("expected_move_pct"): em = intel["expected_move_pct"]
         except Exception:
             pass
@@ -1485,6 +1468,18 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         if nc is not None:
             aligned = (nc > 0 and direction == "long") or (nc < 0 and direction == "short")
             cot_note = f"COT non-comm net {nc:+,.0f} — {'selaras' if aligned else 'divergence (hati-hati)'}"
+
+    # On-chain (crypto) — compact, merged INTO the box (no separate caption below)
+    onchain_note = None
+    if market_key == "crypto":
+        _ocd = (snap.get("crypto_tokens", {}) or snap.get("onchain_data", {}) or {}).get(ticker, {})
+        if _ocd:
+            try:
+                _oc = _onchain_narrative(_ocd, ticker)
+                if _oc:
+                    onchain_note = " ".join(_oc.replace("\n", " ").split())
+            except Exception:
+                onchain_note = None
 
     dp_line = "🌑 Dark pool: akumulasi (institusi beli diam-diam)" if dp_acc else \
               "🌑 Dark pool: distribusi (institusi jual)" if dp_dist else None
@@ -1554,7 +1549,7 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         "ticker": ticker, "market": market_key, "px": px, "has_real_opts": has_real_opts,
         "instrument": instrument, "direction": direction, "conviction": conviction, "pos": pos,
         "entry_zone": entry_zone, "confluence": confluence, "target": target, "stop": stop,
-        "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note, "keith": keith_note,
+        "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note, "onchain": onchain_note, "keith": keith_note,
         "pcr": pcr, "expected_move": em, "by_expiry": by_expiry,
         "breakout_up": breakout_up, "breakout_down": breakout_down,
         "call_wall": cwall, "put_wall": pwall, "sig_label": sig_label, "positions": positions,
@@ -1608,6 +1603,7 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
     if rec["vanna_charm"]: rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
     if rec["dark_pool"]: rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
     if rec["cot"]: rows.append(f"<span style='opacity:0.8'><b>COT:</b> {rec['cot']}</span>")
+    if rec.get("onchain"): rows.append(f"<span style='opacity:0.8'><b>⛓️ On-chain:</b> {rec['onchain']}</span>")
     if rec["keith"]: rows.append(f"<span style='opacity:0.65'>📌 {rec['keith']}</span>")
     extras = []
     if rec.get("pcr") is not None: extras.append(f"PCR {rec['pcr']:.2f}")

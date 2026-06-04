@@ -148,26 +148,28 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
                 st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
             except Exception:
                 pass
-            # compact explanation, folded INSIDE the box (no loose text floating below the map)
-            st.markdown(f"**{qe.get('structural_quad','')} · {qe.get('structural_name','')}** — {qe.get('why','')}")
+            # compact explanation INSIDE the box — ONE clean styled block (not loose captions)
             wc = qe.get("what_changes", [])
-            if wc:
-                _trg = " · ".join(f"→**{w['to']}** {w['trigger']}" for w in wc)
-                st.caption(f"**Pindah:** {_trg}")
+            _pindah = " · ".join(f"→<b>{w['to']}</b> {w['trigger']}" for w in wc) if wc else ""
             _hint = wig.get("action_hint")
             try:
                 from pages_lib._dashboard_legacy import _catalyst_monitor_v2
                 _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
                                                 mq=qe.get("monthly_quad", "Q2"),
                                                 next_q=wig.get("implied_next", "Q2"))
-                _crow = " · ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
+                _chips = "  ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
             except Exception:
-                _crow = ""
-            _line = (f"🎯 **{_hint}**" if _hint else "")
-            if _crow:
-                _line = (_line + "  ·  " if _line else "") + f"⚡ {_crow}"
-            if _line:
-                st.caption(_line)
+                _chips = ""
+            _rows = [f"<b style='color:#e6edf3;'>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b>"
+                     f" — <span style='color:#c9d1d9;'>{qe.get('why','')}</span>"]
+            if _pindah:
+                _rows.append(f"<span style='color:#8b949e;'><b>Pindah:</b> {_pindah}</span>")
+            if _hint:
+                _rows.append(f"<span style='color:#e6edf3;'>🎯 <b>{_hint}</b></span>")
+            if _chips:
+                _rows.append(f"<span style='color:#8b949e;font-size:0.92em;'>⚡ {_chips}</span>")
+            st.markdown("<div style='font-size:0.8rem;line-height:1.55;margin-top:3px;'>"
+                        + "<br>".join(_rows) + "</div>", unsafe_allow_html=True)
     with ecol:
         with st.container(border=True):
             try:

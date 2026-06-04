@@ -202,7 +202,7 @@ class FrontRunEngine:
             "meta": {
                 "weights": {"timing": self.W_TIMING, "btk": self.W_BTK, "rr": self.W_RR,
                             "disc": self.W_DISC, "narr": self.W_NARR},
-                "status_formula": "BOARDING: score≥0.65 + near entry | GATE: 0.45-0.65 | CHECK-IN: 0.30-0.45",
+                "status_formula": "BOARDING: score≥0.65 + near entry + timing≥0.40 (regime window aktif) | GATE: siap struktur tapi timing belum | CHECK-IN: 0.30-0.45 | WAIT: <0.30",
             },
         }
 
@@ -388,8 +388,13 @@ class FrontRunEngine:
         near_entry = range_action in ("✅ BUY ZONE", "approaching_support") or \
                      rr_item.get("trade_stretch", "") in ("oversold", "reset_zone")
 
-        if composite >= 0.65 and near_entry:
+        # BOARDING NOW = struktur SIAP (near entry) + composite tinggi + TIMING regime aktif.
+        # Tanpa timing aktif (regime window belum buka) → max GATE OPENS SOON: siap secara
+        # struktur tapi belum ada pemicu macro → "masuk sekarang belum tentu langsung jalan".
+        if composite >= 0.65 and near_entry and timing_score >= 0.40:
             status, emoji = "BOARDING NOW", "🚨"
+        elif composite >= 0.60 and near_entry:
+            status, emoji = "GATE OPENS SOON", "⚡"
         elif composite >= 0.65 and not near_entry:
             status, emoji = "GATE OPENS SOON", "⚡"
         elif composite >= 0.45:

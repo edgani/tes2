@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s32 — confirmed dup Expected-Move/PC-OI/COT charts merged into setup box (numbers live in the box text; charts no longer drawn) + stripped now-dead chart fns for zero residue · Quad Decoder restructure intact")
+    st.caption("v40 · build 2026-06-03-s34 — Alpha Center: HARD alpha-realness gate (only asymmetric multi-bag ≥100% / bottleneck stays; large-cap/<100% auto-demoted to market tab w/ note) + per-ticker READINESS score (🚨READY/⚡SOON/👀BUILDING/⏳WAIT) + sortable by readiness · Frontrun BOARDING now requires active regime timing (truly imminent)")
     st.divider()
     
     page = st.radio("Navigation", [
