@@ -1066,6 +1066,10 @@ def render(snap, prices=None, vix_now=20.0):
         st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:8px 0 4px;'>⚡ ASSET PULSE (21D) — gerak aset 21 hari</div>", unsafe_allow_html=True)
         st.plotly_chart(_plotly_asset_pulse(snap, prices), width='stretch', config={"displayModeBar": False}, key="ap_v54")
 
+        # Crash Meter moved HERE (below Asset Pulse, left col) — full width, no longer cramped/cut in right col
+        st.markdown("<div style='font-size:0.62rem;color:#F85149;font-weight:700;margin:8px 0 4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        st.markdown(_crash_meter_html(snap), unsafe_allow_html=True)
+
 
     # ═══════════════════════════════════════════════════════════
     # RIGHT COLUMN: Gauges → Crash Meter → Bubble → Asset Pulse
@@ -1094,10 +1098,8 @@ def render(snap, prices=None, vix_now=20.0):
             dict(value=f"{n_alerts}", label="ALERTS", color=ac, pct=n_alerts * 10, sub=a_cond, sub2="Behavioral"),
         ]), unsafe_allow_html=True)
 
-        # ── Crash Meter (HTML segmented) — labels no longer collide with gauges ──
-        st.markdown("<div style='font-size:0.62rem;color:#F85149;font-weight:700;margin:8px 0 3px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
-        st.markdown(_crash_meter_html(snap), unsafe_allow_html=True)
+        # ── Boom-Bust (Crash Meter moved to left col below Asset Pulse for room) ──
         st.markdown("<div style='font-size:0.62rem;color:#A371F7;font-weight:700;margin:6px 0 3px;'>🌀 BOOM-BUST / SURVIVAL</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-        st.caption("Gauge atas = VIX/Health/Kelly/Alerts · Crash Meter = 5 gauge tekanan pasar · "
+        st.caption("Gauge atas = VIX/Health/Kelly/Alerts · Crash Meter (kiri) = 5 gauge tekanan pasar · "
                    "Boom-Bust = posisi siklus + Super Bubble Score. Semua = **risiko sistemik**.")

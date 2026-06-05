@@ -282,15 +282,12 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
 
 
 def _render_oi_heatmap(snap, ticker, market_key):
-    """OI heatmap (open interest by strike). Per spec: NO call/put walls for FX/commodities
-    (those were proxy/fake). FX → no listed options at all (honest N/A → COT). Commodity futures →
-    real ETF-proxy OI concentration (GLD/USO/etc), framed as OI levels, not 'walls'."""
+    """OI heatmap (open interest by strike). ONLY renders when there's REAL OI data (commodity
+    futures via ETF proxy). FX / no-data → renders NOTHING (no N/A caption clutter — positioning
+    is already in the setup box via COT above)."""
     import streamlit as st
-    st.markdown("**📊 OI Heatmap (Open Interest by Strike)**")
     if market_key == "forex":
-        st.caption(f"Forex ({ticker}) gak punya listed options → OI heatmap **N/A**. "
-                   f"Buat positioning, pakai **COT (Commitments of Traders)** di atas.")
-        return
+        return  # no listed options → COT is in the setup box; skip empty N/A caption
     FUT_PROXY = {
         "CL=F": "USO", "GC=F": "GLD", "SI=F": "SLV", "NG=F": "UNG", "HG=F": "CPER",
         "RB=F": "UGA", "HO=F": "USO", "ZC=F": "CORN", "ZW=F": "WEAT", "ZS=F": "SOYB",
@@ -305,13 +302,12 @@ def _render_oi_heatmap(snap, ticker, market_key):
         tot_c = opts.get("total_call_oi", 0)
         tot_p = opts.get("total_put_oi", 0)
         pcr = (tot_p / tot_c) if tot_c else 0
+        st.markdown("**📊 OI Heatmap (Open Interest by Strike)**")
         st.markdown(f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}** · "
                     f"Put/Call OI ratio: **{pcr:.2f}**" + (f" (via {proxy} ETF proxy)" if proxy else ""))
         st.caption("Konsentrasi OI via ETF proxy (level absolut beda skala dari futures — pakai buat "
                    "lihat di mana OI numpuk + skew put/call, bukan 'wall' pasti). PCR >1 = put-heavy (hedging/bearish).")
-    else:
-        st.caption(f"OI {ticker} belum ke-fetch — futures OI gak ada di yfinance, pakai ETF proxy "
-                   f"({FUT_PROXY.get(ticker, 'N/A')}) atau CME QuikStrike.")
+    # else: no real OI data → render nothing (no N/A clutter below the setup box)
 
 
 def _render_signal_boxes(rr, snap, market_key, show_options, ticker):
@@ -1029,7 +1025,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s35"
+_CARD_BUILD = "s37"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):

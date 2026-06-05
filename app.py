@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s35 — dashboard FORCED compact for 1-frame (top padding 2.6→1.3rem, gaps tightened, quad-map 190→140px, asset-pulse 88→62px, big header → 1-line) + removed repeating 'Cara baca' legend from EVERY card (all tabs) — readiness badge stays in card header")
+    st.caption("v40 · build 2026-06-03-s37 — Risk Range now FULLY MQA-v21: FIX-BASIS (TRADE=prior-close, TREND=SMA63, TAIL=SMA756) + ATR-based width (ATR×mult, WTI TREND 0.711 = your $98.52 calibration) + vol-of-vol=ROC(ATR) + volume factor (all verified) · dashboard: quad explanation→inner panel, Crash Meter→below Asset Pulse (left), Boom-Bust roomier · setup box: OI N/A captions removed")
     st.divider()
     
     page = st.radio("Navigation", [

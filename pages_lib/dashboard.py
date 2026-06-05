@@ -154,28 +154,24 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
                 st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
             except Exception:
                 pass
-            # compact explanation INSIDE the box — ONE clean styled block (not loose captions)
+            # compact explanation INSIDE the box — simplified, visually integrated inner panel
             wc = qe.get("what_changes", [])
-            _pindah = " · ".join(f"→<b>{w['to']}</b> {w['trigger']}" for w in wc) if wc else ""
-            _hint = wig.get("action_hint")
+            _pindah = " · ".join(f"→{w['to']} {w['trigger']}" for w in wc) if wc else ""
+            _hint = wig.get("action_hint", "")
             try:
                 from pages_lib._dashboard_legacy import _catalyst_monitor_v2
                 _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
                                                 mq=qe.get("monthly_quad", "Q2"),
                                                 next_q=wig.get("implied_next", "Q2"))
-                _chips = "  ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
+                _chips = " ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
             except Exception:
                 _chips = ""
-            _rows = [f"<b style='color:#e6edf3;'>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b>"
-                     f" — <span style='color:#c9d1d9;'>{qe.get('why','')}</span>"]
-            if _pindah:
-                _rows.append(f"<span style='color:#8b949e;'><b>Pindah:</b> {_pindah}</span>")
-            if _hint:
-                _rows.append(f"<span style='color:#e6edf3;'>🎯 <b>{_hint}</b></span>")
-            if _chips:
-                _rows.append(f"<span style='color:#8b949e;font-size:0.92em;'>⚡ {_chips}</span>")
-            st.markdown("<div style='font-size:0.8rem;line-height:1.55;margin-top:3px;'>"
-                        + "<br>".join(_rows) + "</div>", unsafe_allow_html=True)
+            _l1 = f"<b style='color:#e6edf3;'>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b> — <span style='color:#c9d1d9;'>{qe.get('why','')}</span>"
+            _l2 = (f"<span style='color:#8b949e;'><b>Pindah:</b> {_pindah}</span>" if _pindah else "")
+            _l3 = (f"🎯 <b>{_hint}</b>" if _hint else "") + (f"<span style='color:#8b949e;'> · ⚡ {_chips}</span>" if _chips else "")
+            _body = "<br>".join([x for x in [_l1, _l2, _l3] if x])
+            st.markdown(f"<div style='background:#0d1117;border-radius:6px;padding:6px 10px;margin-top:5px;"
+                        f"font-size:0.78rem;line-height:1.5;'>{_body}</div>", unsafe_allow_html=True)
     with ecol:
         with st.container(border=True):
             try:
