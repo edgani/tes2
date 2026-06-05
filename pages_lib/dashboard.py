@@ -64,7 +64,7 @@ _QM_FILL = {"Q1": "rgba(63,185,80,0.16)", "Q2": "rgba(210,153,34,0.16)",
 _QM_NAME = {"Q1": "Q1 · Goldilocks", "Q2": "Q2 · Reflation", "Q3": "Q3 · Stagflation", "Q4": "Q4 · Deflation"}
 
 
-def _quad_map_figure(qe: dict):
+def _quad_map_figure(qe: dict, explanation: str = None):
     """2×2 Hedgeye GIP map: x=inflation RoC, y=growth RoC. Plots structural + monthly
     position and the transition arrow — the whole regime story in one picture."""
     import plotly.graph_objects as go
@@ -121,6 +121,13 @@ def _quad_map_figure(qe: dict):
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},
     )
+    # ── Explanation INSIDE the map plot (Edward: merge the circled text into the map box) ──
+    if explanation:
+        fig.update_layout(height=270, margin={"t": 6, "b": 24, "l": 40, "r": 8})
+        fig.add_annotation(xref="paper", yref="paper", x=0.0, y=1.0, xanchor="left", yanchor="top",
+                           text=explanation, showarrow=False, align="left",
+                           font={"size": 8.5, "color": "#e6edf3"},
+                           bgcolor="rgba(13,17,23,0.74)", bordercolor="#d29922", borderwidth=1, borderpad=5)
     return fig
 
 
@@ -151,11 +158,7 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     mcol, ecol = st.columns([1.35, 1])
     with mcol:
         with st.container(border=True):
-            try:
-                st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
-            except Exception:
-                pass
-            # compact explanation INSIDE the box — simplified, visually integrated inner panel
+            # Build the explanation FIRST so it renders INSIDE the map plot (not as a block below)
             wc = qe.get("what_changes", [])
             _pindah = " · ".join(f"→{w['to']} {w['trigger']}" for w in wc) if wc else ""
             _hint = wig.get("action_hint", "")
@@ -167,13 +170,15 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
                 _chips = " ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
             except Exception:
                 _chips = ""
-            _l1 = f"<b style='color:#e6edf3;'>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b> — <span style='color:#c9d1d9;'>{qe.get('why','')}</span>"
-            _l2 = (f"<span style='color:#8b949e;'><b>Pindah:</b> {_pindah}</span>" if _pindah else "")
-            _l3 = (f"🎯 <b>{_hint}</b>" if _hint else "") + (f"<span style='color:#8b949e;'> · ⚡ {_chips}</span>" if _chips else "")
+            _l1 = f"<b>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b> — {qe.get('why','')}"
+            _l2 = (f"<b>Pindah:</b> {_pindah}" if _pindah else "")
+            _l3 = (f"🎯 <b>{_hint}</b>" if _hint else "") + (f" · ⚡ {_chips}" if _chips else "")
             _body = "<br>".join([x for x in [_l1, _l2, _l3] if x])
-            st.markdown(f"<div style='background:#161b22;border:1px solid #30363d;border-left:3px solid #d29922;"
-                        f"border-radius:6px;padding:7px 11px;margin-top:6px;"
-                        f"font-size:0.78rem;line-height:1.5;'>{_body}</div>", unsafe_allow_html=True)
+            try:
+                st.plotly_chart(_quad_map_figure(qe, explanation=_body), width='stretch',
+                                config={"displayModeBar": False})
+            except Exception:
+                pass
     with ecol:
         with st.container(border=True):
             try:

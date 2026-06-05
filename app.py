@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s40 — setup MERGED INTO the chart: trade plan + microstructure now render as 2 panels INSIDE the GEX/Risk-Range plot (no separate text block below), all market tabs + Alpha Center · Risk Range MQA-v21 (FIX-BASIS + ATR width)")
+    st.caption("v40 · build 2026-06-03-s41 — Quad explanation MERGED INTO the quad-map plot (no separate block); ticker setup panels shrunk + more transparent + taller chart so they no longer block the plot; removed confusing diagonal Aggregate-GEX line; fixed Last=$nan (price sanitized) + SL marker (was tail.lrr above price → now nearest support below entry) · Risk Range MQA-v21 (FIX-BASIS + ATR width)")
     st.divider()
     
     page = st.radio("Navigation", [

@@ -92,8 +92,15 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
     if not show_walls:
         # No listed options for this market → the walls/max-pain/flip/GEX bars are proxy/fake. Drop them.
         strikes, gexvals, cw, pw, flip, mp = [], [], None, None, None, None
-    # entry/target/stop derived from the risk-range bands (always available)
-    entry = _f(trade.get("lrr")); target = _f(trade.get("trr")); stop = _f(tail.get("lrr"))
+    # entry/target derived from the risk-range bands (always available)
+    entry = _f(trade.get("lrr")); target = _f(trade.get("trr"))
+    # stop = nearest band-low BELOW entry (sensible for a long view); else ~7% below entry.
+    # (Was tail.lrr, which can sit ABOVE price after the SMA756 basis fix → SL drawn above target.)
+    _supports = [v for v in [_f(tail.get("lrr")), _f(trend.get("lrr"))] if v and entry and v < entry]
+    stop = max(_supports) if _supports else (entry * 0.93 if entry else None)
+    # sanitize price → avoid "Last $nan" on the chart
+    if not (isinstance(px, (int, float)) and px == px and px > 0):
+        px = (((entry or 0) + (target or 0)) / 2) or None
 
     # Core extent = risk-range bands + price + entry/target/stop — always meaningful and tight.
     core = [v for v in [px, entry, target, stop,
@@ -128,16 +135,13 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
             fig.add_vrect(x0=l, x1=t, fillcolor=color, line_width=0,
                           annotation_text=lbl, annotation_position="top left",
                           annotation_font={"size": 9, "color": "#8b949e"})
-    # GEX bars + aggregate cumulative curve (only when real per-strike data exists)
+    # GEX bars only (per-strike). The cumulative "Aggregate GEX" line was removed — it rendered as
+    # a confusing diagonal crossing the whole plot and added no actionable info over the bars.
     if strikes and gexvals and len(strikes) == len(gexvals):
         colors = ["#3FB950" if v >= 0 else "#F0883E" for v in gexvals]
-        fig.add_trace(go.Bar(x=strikes, y=gexvals, marker_color=colors, opacity=0.75,
+        fig.add_trace(go.Bar(x=strikes, y=gexvals, marker_color=colors, opacity=0.55,
                              name="GEX by strike",
                              hovertemplate="Strike %{x}<br>GEX %{y:,.0f}<extra></extra>"))
-        cum = list(itertools.accumulate(gexvals))
-        fig.add_trace(go.Scatter(x=strikes, y=cum, mode="lines", name="Aggregate GEX",
-                                 line={"color": "#58A6FF", "width": 2}, yaxis="y2",
-                                 hovertemplate="Strike %{x}<br>Cumulative %{y:,.0f}<extra></extra>"))
     # vertical reference lines — labels staggered vertically (yshift) so they stay readable
     # even when two lines sit at nearly the same price (e.g. Last vs Call Wall).
     for x, color, lbl, dash, ysh in [(px, "#3FB950", f"Last {cur}{px:,.2f}", "solid", 0),
@@ -171,22 +175,24 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
         yaxis2={"title": {"text": "Aggregate", "font": {"size": 10, "color": "#8b949e"}},
                 "overlaying": "y", "side": "right", "showgrid": False, "tickfont": {"color": "#8b949e"}},
     )
-    # ── Setup overlay INSIDE the plot (Edward: merge the setup text into the chart box) ──
+    # ── Setup overlay INSIDE the plot — compact panels so they DON'T block the chart ──
     if setup:
         _hdr, _bar, _left, _right = setup
-        fig.update_layout(height=430, margin={"t": 30, "b": 30, "l": 52, "r": 20})
+        # taller plot + suppress the redundant title (header annotation carries ticker/price/range)
+        fig.update_layout(height=500, margin={"t": 26, "b": 26, "l": 50, "r": 16},
+                          title={"text": ""})
         fig.add_annotation(xref="paper", yref="paper", x=0.0, y=1.0, xanchor="left", yanchor="bottom",
                            text=f"<b>{_hdr}</b>", showarrow=False, align="left",
-                           font={"size": 10, "color": "#c9d1d9"})
-        fig.add_annotation(xref="paper", yref="paper", x=0.006, y=0.97, xanchor="left", yanchor="top",
+                           font={"size": 9, "color": "#c9d1d9"})
+        fig.add_annotation(xref="paper", yref="paper", x=0.004, y=0.995, xanchor="left", yanchor="top",
                            text=_left, showarrow=False, align="left",
-                           font={"size": 10, "color": "#e6edf3"},
-                           bgcolor="rgba(13,17,23,0.82)", bordercolor=_bar, borderwidth=1, borderpad=5)
+                           font={"size": 8.5, "color": "#e6edf3"},
+                           bgcolor="rgba(13,17,23,0.70)", bordercolor=_bar, borderwidth=1, borderpad=4)
         if _right:
-            fig.add_annotation(xref="paper", yref="paper", x=0.985, y=0.97, xanchor="right", yanchor="top",
+            fig.add_annotation(xref="paper", yref="paper", x=0.996, y=0.995, xanchor="right", yanchor="top",
                                text=_right, showarrow=False, align="left",
-                               font={"size": 10, "color": "#b9c2cc"},
-                               bgcolor="rgba(13,17,23,0.82)", bordercolor="#30363d", borderwidth=1, borderpad=5)
+                               font={"size": 8.5, "color": "#b9c2cc"},
+                               bgcolor="rgba(13,17,23,0.70)", bordercolor="#30363d", borderwidth=1, borderpad=4)
     return fig
 
 
@@ -1094,7 +1100,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s40"
+_CARD_BUILD = "s41"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
