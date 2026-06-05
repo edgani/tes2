@@ -123,11 +123,13 @@ def _quad_map_figure(qe: dict, explanation: str = None):
     )
     # ── Explanation INSIDE the map plot (Edward: merge the circled text into the map box) ──
     if explanation:
-        fig.update_layout(height=270, margin={"t": 6, "b": 24, "l": 40, "r": 8})
+        # compact 1–2 line headline only (top-left, small) so it doesn't blanket the cells/markers.
+        # The full why/transition detail is rendered as a caption BELOW the map by the caller.
+        fig.update_layout(height=210, margin={"t": 6, "b": 24, "l": 40, "r": 8})
         fig.add_annotation(xref="paper", yref="paper", x=0.0, y=1.0, xanchor="left", yanchor="top",
                            text=explanation, showarrow=False, align="left",
-                           font={"size": 8.5, "color": "#e6edf3"},
-                           bgcolor="rgba(13,17,23,0.74)", bordercolor="#d29922", borderwidth=1, borderpad=5)
+                           font={"size": 9, "color": "#e6edf3"},
+                           bgcolor="rgba(13,17,23,0.80)", bordercolor="#d29922", borderwidth=1, borderpad=4)
     return fig
 
 
@@ -170,15 +172,26 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
                 _chips = " ".join(f"{_e}{_n}" for _n, _v, _e, _d, _im in _cats[:5]) if _cats else ""
             except Exception:
                 _chips = ""
-            _l1 = f"<b>{qe.get('structural_quad','')} · {qe.get('structural_name','')}</b> — {qe.get('why','')}"
-            _l2 = (f"<b>Pindah:</b> {_pindah}" if _pindah else "")
-            _l3 = (f"🎯 <b>{_hint}</b>" if _hint else "") + (f" · ⚡ {_chips}" if _chips else "")
-            _body = "<br>".join([x for x in [_l1, _l2, _l3] if x])
+            # In-plot: SHORT headline only (current→next + action). Keeps it "in the map" without
+            # blanketing the quad labels/markers (simpel, gak nutupin, tetap kebaca).
+            _nq = wig.get("implied_next", "?"); _nqn = wig.get("implied_next_name", "")
+            _headline = "<br>".join([x for x in [
+                f"<b>{qe.get('structural_quad','')} → {_nq}</b>"
+                + (f" · {qe.get('structural_name','')}→{_nqn}" if _nqn else ""),
+                (f"🎯 <b>{_hint}</b>" if _hint else ""),
+            ] if x])
             try:
-                st.plotly_chart(_quad_map_figure(qe, explanation=_body), width='stretch',
+                st.plotly_chart(_quad_map_figure(qe, explanation=_headline), width='stretch',
                                 config={"displayModeBar": False})
             except Exception:
                 pass
+            # Full detail BELOW the map, inside the SAME bordered box — readable, covers nothing.
+            _detail = " · ".join([x for x in [qe.get('why', ''),
+                                              (f"<b>Pindah:</b> {_pindah}" if _pindah else ""),
+                                              (f"⚡ {_chips}" if _chips else "")] if x])
+            if _detail:
+                st.markdown(f"<div style='font-size:0.72rem;color:#b9c2cc;line-height:1.35;"
+                            f"margin-top:4px'>{_detail}</div>", unsafe_allow_html=True)
     with ecol:
         with st.container(border=True):
             try:

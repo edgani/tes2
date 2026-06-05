@@ -887,9 +887,8 @@ def _boombust_timeline_html(snap):
     bar_color = "#3FB950" if score <= 3 else "#D29922" if score <= 6 else "#F85149"
 
     return (
-        f'<div style="padding:16px 18px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
-        # Header
-        f'<div style="font-size:0.7rem;color:#A371F7;font-weight:600;margin-bottom:10px;">🌀 Boom-Bust Stage</div>'
+        f'<div style="padding:14px 18px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
+        # (inner "Boom-Bust Stage" header removed — the section header above already labels it; was a double header)
         # Timeline
         f'<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
         f'{line_html}' + ''.join(nodes) + f'</div>'
@@ -1017,10 +1016,10 @@ def _crash_meter_html(snap):
             for i in range(5))
         cells.append(
             f'<div style="flex:1;text-align:center;min-width:0;">'
-            f'<div style="font-size:0.5rem;color:#8b949e;line-height:1.05;height:1.9em;display:flex;'
+            f'<div style="font-size:0.56rem;color:#8b949e;line-height:1.1;min-height:2em;display:flex;'
             f'align-items:center;justify-content:center;">{name}</div>'
             f'<div style="display:flex;gap:2px;margin:2px 1px;">{segs}</div>'
-            f'<div style="font-size:0.62rem;color:{c};font-weight:800;">{val}</div></div>'
+            f'<div style="font-size:0.68rem;color:{c};font-weight:800;">{val}</div></div>'
         )
     oc = GREEN if total <= 7 else AMBER if total <= 12 else RED
     ol = "AMAN" if total <= 7 else "WASPADA" if total <= 12 else "KRITIS"

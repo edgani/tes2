@@ -1282,7 +1282,62 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s43"
+_CARD_BUILD = "s44"
+
+
+def _render_greeks_panel(snap, ticker, market_key, px):
+    """Compact-but-complete live greeks/options line for US + crypto. Renders ONLY when REAL options
+    exist (source != proxy) — never shows fake greeks. Restores the net-GEX / γ-flip / max-pain / walls /
+    P/C / expected-move / dark-pool readout that was lost when the setup box merge dropped the panel."""
+    import streamlit as st
+    if market_key not in ("us_equity", "crypto"):
+        return
+    od = (snap.get("options_data", {}) or snap.get("yfinance_options", {}) or {}).get(ticker, {})
+    if not od or od.get("source") == "proxy":
+        return
+    _cur = _cur_for(market_key, ticker)
+    def f(v):
+        try:
+            return f"{_cur}{float(v):,.2f}"
+        except (TypeError, ValueError):
+            return None
+    bits = []
+    gex = od.get("net_gex")
+    if gex is not None:
+        try:
+            g = float(gex)
+            bits.append(f"**Net GEX** {g:+,.0f} → {'LONG γ (pinned/mean-revert, fade extremes)' if g > 0 else 'SHORT γ (momentum, breakout/squeeze run)'}")
+        except (TypeError, ValueError):
+            pass
+    gf = od.get("gamma_flip")
+    if gf:
+        _gx = f(gf)
+        if _gx:
+            bits.append(f"γ-flip {_gx}" + ((" (px di atas → dealer support)" if px and px > float(gf) else " (px di bawah → volatile)") if px else ""))
+    mp = od.get("max_pain")
+    if mp and f(mp): bits.append(f"Max-pain {f(mp)}")
+    cw, pw = od.get("call_wall"), od.get("put_wall")
+    if cw and f(cw): bits.append(f"Call wall {f(cw)}")
+    if pw and f(pw): bits.append(f"Put wall {f(pw)}")
+    pcr = od.get("put_call_ratio")
+    if pcr is not None:
+        try:
+            _p = float(pcr); bits.append(f"P/C {_p:.2f} ({'bearish skew' if _p > 1 else 'bullish skew'})")
+        except (TypeError, ValueError):
+            pass
+    em = od.get("expected_move_pct") or od.get("expected_move")
+    if em is not None:
+        try: bits.append(f"Exp move ±{float(em):.1f}%")
+        except (TypeError, ValueError): pass
+    dxn = od.get("net_dex") or od.get("dex")
+    if dxn is not None:
+        try:
+            _d = float(dxn); bits.append(f"DEX {_d:+,.0f} ({'dealers longer delta' if _d > 0 else 'shorter delta'})")
+        except (TypeError, ValueError): pass
+    dp = od.get("dark_pool_sentiment") or ((od.get("dark_pool") or {}).get("net_sentiment"))
+    if dp: bits.append(f"Dark-pool: {dp}")
+    if bits:
+        st.caption("🟢 **Greeks (live options):** " + " · ".join(bits))
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1291,6 +1346,12 @@ def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_oncha
     captions here). Only the forex/commodity OI heatmap remains — FX is honest N/A→COT, commodity
     uses real ETF-proxy OI, no fake call/put walls."""
     import streamlit as st
+    # Live greeks/options panel (US + crypto, real options only) — restored compact readout
+    if market_key in ("us_equity", "crypto") and show_options:
+        try:
+            _render_greeks_panel(snap, ticker, market_key, px)
+        except Exception:
+            pass
     # OI heatmap for forex/commodities (per spec) — FX honest N/A→COT, commodity real ETF-proxy OI, no fake walls
     if market_key in ("forex", "commodity"):
         try:
