@@ -383,14 +383,8 @@ def render(snap: dict):
             except Exception:
                 pass
 
-            # setup details folded immediately UNDER the chart (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool)
-            try:
-                from components.rich_ticker_card import render_options_recommendation
-                render_options_recommendation(rr, snap, ticker, _mkt)
-            except Exception:
-                pass
-
-            # companions (expected move / P/C OI / COT) below the setup
+            # setup overlay is now rendered INSIDE the main chart (part="main") — no separate block
+            # companions (expected move / P/C OI / COT) below the chart
             try:
                 from components.rich_ticker_card import render_detail_charts
                 render_detail_charts(ticker, rr, snap, _mkt, part="companions")

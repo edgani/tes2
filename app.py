@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s38 — setup box now FULL-WIDTH 2-COLUMN card (left=trade plan, right=cara masuk/dealer/microstructure) — no more empty right void, all market tabs · quad explanation = contrasting accent inner-card w/ visible box border (clearly inside the Quad Decoder box) · dashboard bottom padding 0.2→3rem so Crash Meter/Boom-Bust not clipped · Risk Range = MQA-v21 (FIX-BASIS + ATR width, verified)")
+    st.caption("v40 · build 2026-06-03-s40 — setup MERGED INTO the chart: trade plan + microstructure now render as 2 panels INSIDE the GEX/Risk-Range plot (no separate text block below), all market tabs + Alpha Center · Risk Range MQA-v21 (FIX-BASIS + ATR width)")
     st.divider()
     
     page = st.radio("Navigation", [

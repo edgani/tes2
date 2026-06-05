@@ -64,7 +64,7 @@ def _cur_for(market_key=None, ticker=None):
     return "$"
 
 
-def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True):
+def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None):
     """Unified DARK chart on a price x-axis: GEX-by-strike bars + aggregate gamma curve +
     put/call walls + gamma flip + max pain + TRADE/TREND/TAIL bands + Entry/Target/SL X-marks.
     show_walls=False (forex/commodity/IHSG = no listed options) → suppress all options-derived
@@ -171,7 +171,75 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True):
         yaxis2={"title": {"text": "Aggregate", "font": {"size": 10, "color": "#8b949e"}},
                 "overlaying": "y", "side": "right", "showgrid": False, "tickfont": {"color": "#8b949e"}},
     )
+    # ── Setup overlay INSIDE the plot (Edward: merge the setup text into the chart box) ──
+    if setup:
+        _hdr, _bar, _left, _right = setup
+        fig.update_layout(height=430, margin={"t": 30, "b": 30, "l": 52, "r": 20})
+        fig.add_annotation(xref="paper", yref="paper", x=0.0, y=1.0, xanchor="left", yanchor="bottom",
+                           text=f"<b>{_hdr}</b>", showarrow=False, align="left",
+                           font={"size": 10, "color": "#c9d1d9"})
+        fig.add_annotation(xref="paper", yref="paper", x=0.006, y=0.97, xanchor="left", yanchor="top",
+                           text=_left, showarrow=False, align="left",
+                           font={"size": 10, "color": "#e6edf3"},
+                           bgcolor="rgba(13,17,23,0.82)", bordercolor=_bar, borderwidth=1, borderpad=5)
+        if _right:
+            fig.add_annotation(xref="paper", yref="paper", x=0.985, y=0.97, xanchor="right", yanchor="top",
+                               text=_right, showarrow=False, align="left",
+                               font={"size": 10, "color": "#b9c2cc"},
+                               bgcolor="rgba(13,17,23,0.82)", bordercolor="#30363d", borderwidth=1, borderpad=5)
     return fig
+
+
+def _setup_text_cols(rr, snap, ticker, market_key="us_equity"):
+    """Build (header, accent_color, left_html, right_html) for the in-chart setup overlay.
+    Left = trade plan; right = entry styles + microstructure. None if no recommendation."""
+    rec = build_options_recommendation(rr, snap, ticker, market_key)
+    if not rec:
+        return None
+    f = rec["fmt"]
+    bar = "#3FB950" if rec["direction"] == "long" else "#F85149" if rec["direction"] == "short" else "#8B949E"
+    de = {"long": "🟢", "short": "🔴", "flat": "⚪"}.get(rec["direction"], "⚪")
+    conv = " · ⚡ high-conviction" if rec["conviction"] == "high" else ""
+    if rec["has_real_opts"]:
+        src = "🟢 live options + greeks"
+    elif market_key in ("commodity", "forex"):
+        src = "TRR/LRR + COT"
+    elif market_key == "ihsg":
+        src = "TRR/LRR + bandar"
+    else:
+        src = "TRR/LRR (options N/A)"
+    bits = [f"📋 <b>{rec['ticker']}</b>", f"{f(rec['px'])}", rec["sig_label"],
+            f"TRADE {f(rec['trade_lrr'])}–{f(rec['trade_trr'])}"]
+    if rec["has_real_opts"] and (rec["call_wall"] or rec["put_wall"]):
+        w = []
+        if rec["call_wall"]: w.append(f"CW {f(rec['call_wall'])}")
+        if rec["put_wall"]: w.append(f"PW {f(rec['put_wall'])}")
+        bits.append(" ".join(w))
+    header = " · ".join(bits) + f"  ({src})"
+
+    left = [f"{de} <b>Posisi:</b> {rec['instrument']}{conv}"]
+    if rec["entry_zone"]: left.append(f"<b>Entry:</b> {rec['entry_zone']}")
+    for c in rec["confluence"][:2]:
+        left.append(f"↳ {c}")
+    if rec["target"]: left.append(f"<b>Target:</b> {rec['target']} · <b>Stop:</b> {rec['stop']}")
+    if rec["by_expiry"]: left.append(f"<b>Exp move:</b> {rec['by_expiry']}")
+    if rec["breakout_up"]: left.append(f"📈 {rec['breakout_up']}")
+    if rec["breakout_down"]: left.append(f"📉 {rec['breakout_down']}")
+
+    right = []
+    if rec.get("positions") and len(rec["positions"]) >= 2:
+        right.append("<b>🎚️ Cara masuk:</b>")
+        for p in rec["positions"]:
+            right.append(f"{p['type']}: {p['detail']}")
+    if rec["dealer"]: right.append(f"<b>Dealer:</b> {rec['dealer']}")
+    if rec["vanna_charm"]: right.append(f"<b>Vanna/charm:</b> {rec['vanna_charm']}")
+    if rec["dark_pool"]: right.append(rec["dark_pool"])
+    if rec["cot"]: right.append(f"<b>COT:</b> {rec['cot']}")
+    if rec.get("onchain"): right.append(f"<b>⛓️ On-chain:</b> {rec['onchain']}")
+    if rec["keith"]: right.append(f"📌 {rec['keith']}")
+    if rec.get("pcr") is not None: right.append(f"PCR {rec['pcr']:.2f}")
+
+    return (header, bar, "<br>".join(left), "<br>".join(right))
 
 
 def _bandarmetrics_chart(bm, ticker, cur="Rp"):
@@ -250,7 +318,8 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
     _walls = market_key not in ("forex", "commodity", "ihsg")
     if part in ("all", "main"):
       try:
-        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls)
+        _setup = _setup_text_cols(rr, snap, ticker, market_key)
+        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls, setup=_setup)
         if _fig is not None:
             st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
       except Exception:
@@ -1025,7 +1094,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s38"
+_CARD_BUILD = "s40"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1121,18 +1190,12 @@ def render_rich_ticker(
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
-        # ── BLOCK 1 — ONE block: main GEX chart → setup details → companions → extras ──
-        # Spec: setup box (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) lives INSIDE
-        # block 1, merged right under the chart — not a separate bordered box.
-        render_detail_charts(ticker, rr, snap, market_key, px, part="main")  # main GEX/RR chart only
+        # ── BLOCK 1 — main GEX/Risk-Range chart with the setup overlay INSIDE the plot ──
+        # Setup (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) is now rendered as
+        # 2-column panels inside the chart itself (no separate text block below).
+        render_detail_charts(ticker, rr, snap, market_key, px, part="main")
 
-        # Setup details, folded immediately UNDER the main chart (borderless → one block)
-        try:
-            render_options_recommendation(rr, snap, ticker, market_key)
-        except Exception:
-            pass
-
-        # companion mini-charts (expected move / P/C OI / COT) + bandarmetrics, below the setup
+        # companion mini-charts (expected move / P/C OI / COT) + bandarmetrics, below the chart
         render_detail_charts(ticker, rr, snap, market_key, px, part="companions")
 
         # Compact extras folded into the SAME block (no expander)
@@ -1601,11 +1664,13 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
 
     _left = "<br>".join(left_rows)
     _right = "<br>".join(right_rows) if right_rows else "<span style='opacity:0.35'>—</span>"
+    # Borderless → MERGED into the main ticker card block (no nested box-in-box). Keeps the
+    # 2-column layout so the width is used; just a left accent bar for direction.
     st.markdown(
-        f"<div style='background:#0d1117;border:1px solid #21262d;border-left:4px solid {bar};"
-        f"border-radius:8px;padding:10px 14px;margin:4px 0 8px;font-size:0.85rem;line-height:1.65;'>"
+        f"<div style='border-left:3px solid {bar};padding:2px 0 4px 12px;margin:4px 0 6px;"
+        f"font-size:0.85rem;line-height:1.65;'>"
         f"<div style='font-weight:600;margin-bottom:7px;'>{header}</div>"
-        f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;'>"
+        f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:6px 22px;'>"
         f"<div>{_left}</div><div>{_right}</div></div>"
         f"</div>",
         unsafe_allow_html=True,
