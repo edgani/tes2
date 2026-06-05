@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s41 — Quad explanation MERGED INTO the quad-map plot (no separate block); ticker setup panels shrunk + more transparent + taller chart so they no longer block the plot; removed confusing diagonal Aggregate-GEX line; fixed Last=$nan (price sanitized) + SL marker (was tail.lrr above price → now nearest support below entry) · Risk Range MQA-v21 (FIX-BASIS + ATR width)")
+    st.caption("v40 · build 2026-06-03-s43 — FIX KRITIS direction: entry/target/stop sekarang direction-aware (SHORT → target di BAWAH entry + stop di ATAS; LONG sebaliknya). Bug lama: pakai band TREND/TAIL yang abis FIX-BASIS bisa duduk di atas/bawah harga → short MKR target +11.8% di ATAS entry (ngaco). Helper _directional_levels dipake di chart + setup box + compute_optimal_entry → kena SEMUA market. Verified pakai angka MKR (Target $1479 -3.3%, Stop $1545 +1.0%, R:R 3.2:1). BARU: real_flow_engine — REAL buyer vs REAL seller via CVD proxy (tick-rule+close-location) + ABSORPTION (demand/supply palsu) + divergence → konfirmasi LONG (demand asli) / SHORT (distribusi asli), tampil di baris Real flow tiap kartu (semua market). Catatan jujur: CVD proxy dari OHLC, bukan order-flow tick asli — kasih feed exchange buat upgrade. Semua 7 engine self-test PASS.")
     st.divider()
     
     page = st.radio("Navigation", [

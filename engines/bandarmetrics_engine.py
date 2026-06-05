@@ -124,6 +124,7 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     ignition = detect_ignition(df)
     ff = foreign_flow_metrics(foreign, price=c.dropna().tolist()) if foreign is not None else {"available": False}
     stealth = detect_stealth_accumulation(adl_slope, cmf_now, price_slope, ignition.get("ignition_score", 0), obv_slope)
+    markup = estimate_markup_readiness(df, adv_win=adv_win)
 
     # normalized ADL for charting (z-score so multiple tickers comparable)
     adl_n = ((adl - adl.rolling(120).mean()) / adl.rolling(120).std().replace(0, np.nan)).fillna(0)
@@ -151,6 +152,7 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
         "phase": phase, "score": int(round(score)),
         "avgcost": round(avgcost, 2),
         "ignition": ignition, "foreign_flow": ff, "stealth_accumulation": stealth,
+        "markup_readiness": markup,
         "series": {
             "index": [str(x)[:10] for x in idx],
             "price": _ser(c), "open": _ser(o), "high": _ser(h), "low": _ser(l),
@@ -223,6 +225,10 @@ def signal_adjustment(bm: Dict) -> float:
     stl = bm.get("stealth_accumulation") or {}
     if stl.get("is_stealth"):
         base += min(0.35, stl.get("score", 0) / 200.0)
+    # markup-readiness: stealth + READY (enough inventory absorbed + coiled) = highest-conviction long
+    mk = bm.get("markup_readiness") or {}
+    if mk.get("verdict") == "READY" and base > -0.1:
+        base += 0.2
     # real foreign-flow divergence (only when Type-F data is plugged in) dominates when present
     ff = bm.get("foreign_flow") or {}
     if ff.get("available"):
@@ -331,6 +337,67 @@ def detect_stealth_accumulation(adl_slope, cmf, price_slope, ignition_score, obv
     score = max(0, min(100, score))
     is_stealth = bool(score >= 62 and adl_slope > 0 and cmf > 0 and price_slope < 0.03)
     return {"is_stealth": is_stealth, "score": int(round(score)), "reason": " · ".join(reasons)}
+
+
+def estimate_markup_readiness(df, adv_win: int = 60, accum_lookback: int = 60) -> Dict:
+    """Answers Edward's question: 'has the operator absorbed ENOUGH inventory + is price coiled to mark up?'
+
+    Detecting that accumulation is happening (stealth) is necessary but not sufficient — the markup only
+    fires once the operator holds enough float AND price has compressed (spring). Estimates:
+      - inventory_days: ADL gain over the window in DAYS-OF-$-VOLUME (how much float quietly absorbed)
+      - coil_ratio: ATR(14) now vs base — <1 = compressing (loaded), >1.3 = maybe already moving
+      - suppression_pct: how far below the window-high price still sits (room to mark up)
+    Returns {readiness 0-100, verdict EARLY/BUILDING/READY, inventory_days, coil_ratio, suppression_pct, reason}.
+    Honest limit: this is a footprint proxy (OHLCV), not the operator's actual book."""
+    import pandas as pd
+    import numpy as np
+    out = {"readiness": 0, "verdict": "n/a", "inventory_days": 0.0, "coil_ratio": 0.0,
+           "suppression_pct": 0.0, "reason": "insufficient data"}
+    if df is None or len(df) < max(adv_win, accum_lookback) + 5:
+        return out
+    try:
+        h, l, c, v = (pd.to_numeric(df[k], errors="coerce") for k in ("High", "Low", "Close", "Volume"))
+    except (KeyError, TypeError):
+        return out
+    typ = (h + l + c) / 3.0
+    rng = (h - l).replace(0, np.nan)
+    clv = (((c - l) - (h - c)) / rng).clip(-1, 1).fillna(0)
+    adl = (clv * v).cumsum()
+    adv = (v * typ).rolling(adv_win).mean()
+    advN = float(adv.dropna().iloc[-1] or 0)
+    adl_gain = float(adl.iloc[-1] - adl.iloc[-accum_lookback])     # share-vol units
+    px = float(typ.dropna().iloc[-1] or 0)
+    inventory_days = (abs(adl_gain) * px / advN) if advN > 0 else 0.0
+    tr = (h - l).combine((h - c.shift()).abs(), max).combine((l - c.shift()).abs(), max)
+    atr = tr.rolling(14).mean()
+    atr_now = float(atr.iloc[-1] or 0); atr_base = float(atr.iloc[-accum_lookback:-14].mean() or 0)
+    coil_ratio = (atr_now / atr_base) if atr_base else 1.0
+    win_high = float(c.iloc[-accum_lookback:].max() or 0)
+    cN = float(c.iloc[-1] or 0)
+    suppression_pct = ((win_high - cN) / win_high * 100.0) if win_high else 0.0
+
+    score = 0.0; bits = []
+    if inventory_days >= 5:
+        score += min(40, inventory_days * 2.5); bits.append(f"{inventory_days:.0f}d-vol terserap")
+    if coil_ratio < 0.85:
+        score += min(30, (1 - coil_ratio) * 80); bits.append(f"coiled {coil_ratio:.2f}× (spring loaded)")
+    elif coil_ratio > 1.3:
+        score -= 10; bits.append(f"range melebar {coil_ratio:.2f}× (mungkin udah gerak)")
+    if 3 <= suppression_pct <= 25:
+        score += 20; bits.append(f"{suppression_pct:.0f}% di bawah high (ada ruang)")
+    elif suppression_pct < 1:
+        bits.append("di window-high (markup mungkin udah jalan)")
+    adl_rising = _slope(adl, 20) > 0
+    if adl_rising:
+        score += 10; bits.append("inventory masih nambah")
+    score = max(0, min(100, score))
+    verdict = ("READY" if score >= 65 and inventory_days >= 5 and adl_rising
+               else "BUILDING" if score >= 40 else "EARLY")
+    out.update({"readiness": int(round(score)), "verdict": verdict,
+                "inventory_days": round(inventory_days, 1), "coil_ratio": round(coil_ratio, 2),
+                "suppression_pct": round(suppression_pct, 1),
+                "reason": " · ".join(bits) or "sinyal kurang"})
+    return out
 
 
 def analyze_universe(ohlcv: Dict, **kw) -> Dict:

@@ -64,6 +64,58 @@ def _cur_for(market_key=None, ticker=None):
     return "$"
 
 
+def _directional_levels(px, direction, *, t_lrr=0, t_trr=0, tr_lrr=0, tr_trr=0,
+                        tl_lrr=0, tl_trr=0, call_wall=None, put_wall=None):
+    """Direction-aware entry/target/stop that ALWAYS stays on the correct side of price.
+
+    Why this exists: after FIX-BASIS the TREND band is anchored to SMA63 and TAIL to SMA756, so a band
+    can sit ENTIRELY above or below spot. A band edge is therefore only a valid target/stop if it's on
+    the correct side of price — otherwise you get nonsense like a SHORT whose 'target' is +12% ABOVE
+    entry (the MKR bug). We pick levels by SIDE, not by band name:
+      LONG  → entry near TRADE LRR (support);    target = nearest level ABOVE px; stop = just below nearest support
+      SHORT → entry near TRADE TRR (resistance);  target = nearest level BELOW px; stop = just above nearest resistance
+    Returns {entry_lo, entry_hi, target, target2, stop} or {} if px invalid."""
+    try:
+        px = float(px)
+    except (TypeError, ValueError):
+        return {}
+    if not px or px != px:
+        return {}
+
+    def _v(x):
+        try:
+            x = float(x)
+            return x if (x == x and x > 0) else None
+        except (TypeError, ValueError):
+            return None
+
+    b = {k: _v(v) for k, v in dict(t_lrr=t_lrr, t_trr=t_trr, tr_lrr=tr_lrr, tr_trr=tr_trr,
+                                   tl_lrr=tl_lrr, tl_trr=tl_trr, cw=call_wall, pw=put_wall).items()}
+    width = (b["t_trr"] - b["t_lrr"]) if (b["t_trr"] and b["t_lrr"] and b["t_trr"] > b["t_lrr"]) else px * 0.04
+    UP = ("t_trr", "tr_trr", "tr_lrr", "tl_trr", "tl_lrr", "cw")     # any band edge / wall as a resistance
+    DN = ("t_lrr", "tr_lrr", "tr_trr", "tl_lrr", "tl_trr", "pw")     # any band edge / wall as a support
+    ups = sorted({b[k] for k in UP if b[k] and b[k] > px * 1.005})
+    downs = sorted({b[k] for k in DN if b[k] and b[k] < px * 0.995}, reverse=True)
+
+    if direction == "short":
+        target = downs[0] if downs else px * 0.95
+        target2 = downs[1] if len(downs) > 1 else px * 0.90
+        stop = ups[0] * 1.005 if ups else px * 1.03            # just above nearest resistance
+        e_hi = b["t_trr"] or px
+        e_lo = e_hi - width * 0.30
+        return {"entry_lo": e_lo, "entry_hi": e_hi, "target": target, "target2": target2, "stop": stop}
+    if direction == "long":
+        target = ups[0] if ups else px * 1.05
+        target2 = ups[1] if len(ups) > 1 else px * 1.10
+        stop = downs[0] * 0.995 if downs else px * 0.97         # just below nearest support
+        e_lo = b["t_lrr"] or px
+        e_hi = e_lo + width * 0.30
+        return {"entry_lo": e_lo, "entry_hi": e_hi, "target": target, "target2": target2, "stop": stop}
+    # range / flat — fade extremes
+    return {"entry_lo": b["t_lrr"] or px * 0.98, "entry_hi": b["t_trr"] or px * 1.02,
+            "target": b["t_trr"] or px * 1.03, "target2": None, "stop": b["t_lrr"] or px * 0.97}
+
+
 def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None):
     """Unified DARK chart on a price x-axis: GEX-by-strike bars + aggregate gamma curve +
     put/call walls + gamma flip + max pain + TRADE/TREND/TAIL bands + Entry/Target/SL X-marks.
@@ -92,15 +144,20 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
     if not show_walls:
         # No listed options for this market → the walls/max-pain/flip/GEX bars are proxy/fake. Drop them.
         strikes, gexvals, cw, pw, flip, mp = [], [], None, None, None, None
-    # entry/target derived from the risk-range bands (always available)
-    entry = _f(trade.get("lrr")); target = _f(trade.get("trr"))
-    # stop = nearest band-low BELOW entry (sensible for a long view); else ~7% below entry.
-    # (Was tail.lrr, which can sit ABOVE price after the SMA756 basis fix → SL drawn above target.)
-    _supports = [v for v in [_f(tail.get("lrr")), _f(trend.get("lrr"))] if v and entry and v < entry]
-    stop = max(_supports) if _supports else (entry * 0.93 if entry else None)
-    # sanitize price → avoid "Last $nan" on the chart
+    # sanitize price first → avoid "Last $nan" on the chart
     if not (isinstance(px, (int, float)) and px == px and px > 0):
-        px = (((entry or 0) + (target or 0)) / 2) or None
+        _tl0, _tt0 = _f(trade.get("lrr")), _f(trade.get("trr"))
+        px = (((_tl0 or 0) + (_tt0 or 0)) / 2) or None
+    # DIRECTION-AWARE entry/target/stop (was hardcoded as a LONG layout → short setups drew target
+    # above entry). Derive direction from the risk-range phase; helper keeps levels on the right side.
+    _pc = rr.get("phase_code", 0); _phs = rr.get("phase", "")
+    _dir = "long" if (_phs == "BULL" or _pc == 1) else "short" if (_phs == "BEAR" or _pc == -1) else "flat"
+    _lv = _directional_levels(px, _dir, t_lrr=trade.get("lrr"), t_trr=trade.get("trr"),
+                              tr_lrr=trend.get("lrr"), tr_trr=trend.get("trr"),
+                              tl_lrr=tail.get("lrr"), tl_trr=tail.get("trr"),
+                              call_wall=cw, put_wall=pw) if px else {}
+    entry = _lv.get("entry_hi") if _dir == "short" else _lv.get("entry_lo")
+    target = _lv.get("target"); stop = _lv.get("stop")
 
     # Core extent = risk-range bands + price + entry/target/stop — always meaningful and tight.
     core = [v for v in [px, entry, target, stop,
@@ -295,6 +352,38 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     return fig
 
 
+def _ohlcv_from_snap(snap, ticker):
+    """Best-effort OHLCV dict {Open,High,Low,Close,Volume} for a ticker from whatever the snap carries.
+    Tries bandarmetrics series (IHSG + computed), then explicit ohlcv/price_data stores. None if absent."""
+    snap = snap or {}
+    bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
+    ser = bm.get("series") if isinstance(bm, dict) else None
+    if ser and ser.get("price"):
+        try:
+            p = ser["price"]
+            return {"Open": ser.get("open") or p, "High": ser.get("high") or p,
+                    "Low": ser.get("low") or p, "Close": p,
+                    "Volume": ser.get("volume") or [0] * len(p)}
+        except Exception:
+            pass
+    for key in ("ohlcv", "price_data", "ohlc", "prices"):
+        store = snap.get(key)
+        if isinstance(store, dict):
+            d = store.get(ticker)
+            if hasattr(d, "columns"):
+                cols = {str(c).lower(): c for c in d.columns}
+                if all(k in cols for k in ("open", "high", "low", "close")):
+                    try:
+                        return {"Open": d[cols["open"]].tolist(), "High": d[cols["high"]].tolist(),
+                                "Low": d[cols["low"]].tolist(), "Close": d[cols["close"]].tolist(),
+                                "Volume": d[cols["volume"]].tolist() if "volume" in cols else [0] * len(d)}
+                    except Exception:
+                        pass
+            if isinstance(d, dict) and d.get("Close"):
+                return d
+    return None
+
+
 def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part="all"):
     """Shared visual stack used by BOTH market-tab cards (render_rich_ticker) AND Alpha Center —
     so they never drift apart again. Renders inline: GEX+RiskRange+Entry/Target/SL chart, companion
@@ -348,10 +437,97 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
                     st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
                     _stl = _bm.get("stealth_accumulation") or {}
                     _stl_txt = (f" · 🤫 **HIDDEN ACCUMULATION ({_stl.get('score')})**" if _stl.get("is_stealth") else "")
+                    _mk = _bm.get("markup_readiness") or {}
+                    _mk_emoji = {"READY": "🟢", "BUILDING": "🟡", "EARLY": "⚪"}.get(_mk.get("verdict"), "")
+                    _mk_txt = (f" · {_mk_emoji} **MM inventory: {_mk.get('verdict')}** "
+                               f"({_mk.get('inventory_days')}d-vol terserap, coil {_mk.get('coil_ratio')}×, "
+                               f"ruang {_mk.get('suppression_pct')}%)" if _mk.get("verdict") not in (None, "n/a") else "")
                     st.caption(
                         f"**LPM** (teal) = tekanan likuiditas bandar · **Intensity** = lonjakan aktivitas sebelum harga gerak · "
-                        f"**Vol Rotation** (ijo=efisien/kuning=noise/merah=distribusi). Phase **{_bm.get('phase')}** · score {_bm.get('score')}/100{_stl_txt}. "
+                        f"**Vol Rotation** (ijo=efisien/kuning=noise/merah=distribusi). Phase **{_bm.get('phase')}** · score {_bm.get('score')}/100{_stl_txt}{_mk_txt}. "
                         f"⚠️ Approx OHLCV; Foreign Flow butuh data Type-F IDX (gak ada di yfinance). Validasi: `validate_bandarmetrics.py`.")
+    except Exception:
+        pass
+
+    # FX/COMMODITY driver bias (DXY/real-yield/GSR/oil-curve + COT + multi-TF confluence). Fully guarded:
+    # renders nothing on any error or when no driver signal is present (degrades cleanly, never clutters).
+    try:
+        if market_key in ("forex", "commodity"):
+            from engines import fx_commodity_driver_engine as _fx
+            from engines.confluence_engine import multi_tf_confluence as _conf
+            _peers = snap.get("metals_peers") or snap.get("peers")  # {'gold':px,'silver':px} if tab supplies it
+            _ev = _fx.evaluate_from_snap(snap, ticker, peers=_peers)
+            _drv = _ev.get("driver", {}) or {}
+            _cot = _ev.get("cot", {}) or {}
+            _gsr = _ev.get("gsr", {}) or {}
+            _bits = []
+            if _drv.get("bias"):
+                _arrow = "🟢" if _drv["bias"] > 0 else "🔴"
+                _bits.append(f"{_arrow} **{_drv.get('label')}** — {_drv.get('reason')}")
+            if _gsr.get("favor") and _gsr.get("favor") != "n/a":
+                _bits.append(f"⚖️ {_gsr.get('label')}")
+            if _cot.get("bias"):
+                _bits.append(f"📊 {_cot.get('label')} ({_cot.get('reason')})")
+            _cf = _ev.get("confluence", {}) or {}
+            if _cf.get("conviction") and _cf["conviction"] != "NONE":
+                _bits.append(f"🎯 **Confluence {_cf['conviction']}** ({_cf.get('side')}) — {_cf.get('hold')}")
+            if _bits:
+                st.caption("**Driver:** " + " · ".join(_bits)
+                           + "  \n_GYDI/DXY-dominant 2026; GSR mean-revert; oil curve. Butuh feed DXY/real-yield/curve lengkap buat sinyal penuh._")
+    except Exception:
+        pass
+
+    # US-EQUITY driver (breakout + 52w-high proximity + relative-strength + dealer-gamma). Fully guarded.
+    try:
+        if market_key in ("us_equity", "us", "stocks"):
+            from engines.equity_driver_engine import equity_driver as _eq
+            from engines.confluence_engine import multi_tf_confluence as _conf
+            _cs = None
+            for _k in ("price_series", "closes", "prices"):
+                _s = snap.get(_k)
+                if isinstance(_s, (list, tuple)) and len(_s) > 62:
+                    _cs = [float(x) for x in _s if isinstance(x, (int, float))]; break
+            if _cs:
+                _hi52 = snap.get("high_52w") or (max(_cs[-252:]) if len(_cs) >= 60 else None)
+                _bench = snap.get("spy_ret_20d") or snap.get("bench_ret_20d")
+                _ng = snap.get("net_gamma") or snap.get("net_dealer_gamma")
+                _vr = snap.get("vol_ratio")
+                _ed = _eq(_cs, bench_ret_20d=_bench, net_dealer_gamma=_ng, high_52w=_hi52, vol_ratio=_vr)
+                _d = _ed.get("drivers", {})
+                _eb = []
+                _bo = _d.get("breakout", {})
+                if _bo.get("label") and _bo["label"] != "breakout n/a":
+                    _eb.append(("🟢" if _bo.get("bias", 0) > 0 else "🔴" if _bo.get("bias", 0) < 0 else "⚪") + f" {_bo.get('label')} — {_bo.get('reason')}")
+                _dh = _d.get("distance_to_high", {})
+                if _dh.get("label") and _dh["label"] != "ATH n/a":
+                    _eb.append(f"📈 {_dh.get('label')} ({_dh.get('reason')})")
+                _rs = _d.get("relative_strength", {})
+                if _rs.get("bias"):
+                    _eb.append(f"💪 {_rs.get('label')}")
+                _ga = _d.get("gamma", {})
+                if _ga.get("regime") not in (None, "n/a"):
+                    _eb.append(f"🎰 {_ga.get('label')}")
+                if _eb:
+                    st.caption(f"**Driver ({_ed.get('verdict')}):** " + " · ".join(_eb)
+                               + "  \n_RS/gamma muncul kalau data benchmark + GEX ada._")
+    except Exception:
+        pass
+
+    # REAL buyer-vs-seller pressure (CVD proxy + absorption) — universal. Confirms long(real demand) /
+    # short(real distribution); flags absorption (fake demand/supply). Fully guarded.
+    try:
+        from engines.real_flow_engine import real_flow as _rflow
+        _df = _ohlcv_from_snap(snap, ticker)
+        if _df:
+            _rf = _rflow(_df, market=("crypto" if market_key == "crypto" else "generic"))
+            if _rf.get("ok") and _rf["verdict"] != "BALANCED":
+                _cf = ("✅ dukung LONG" if _rf["confirms_long"]
+                       else "✅ dukung SHORT" if _rf["confirms_short"] else "")
+                _wq = _rf.get("wash_quality", {}) or {}
+                _wqt = (f" · ⚠️ volume quality suspect {_wq.get('suspect_frac'):.0%}"
+                        if _wq.get("suspect_frac", 0) > 0.15 else "")
+                st.caption(f"**Real flow:** {_rf['label']} · conf {_rf['confidence']:.0%}"
+                           f"{(' · ' + _cf) if _cf else ''}{_wqt}  \n_{_rf['note']}_")
     except Exception:
         pass
 
@@ -874,10 +1050,16 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
     cur = _cur_for(market_key, ticker)
     def _f(v): return f"{cur}{format(v, fmt)}"
 
+    _dirce = "long" if bull else "short" if bear else "flat"
+    _lvce = _directional_levels(px, _dirce, t_lrr=lrr, t_trr=trr,
+                                tr_lrr=rr.get("trend", {}).get("lrr", 0) or 0,
+                                tr_trr=rr.get("trend", {}).get("trr", 0) or 0,
+                                tl_lrr=rr.get("tail", {}).get("lrr", 0) or 0,
+                                tl_trr=rr.get("tail", {}).get("trr", 0) or 0)
     if bull:
-        stop = lrr - width * 0.30
-        target1 = trr
-        target2 = (rr.get("trend", {}).get("trr", 0) or trr)
+        stop = _lvce.get("stop", lrr - width * 0.30)
+        target1 = _lvce.get("target", trr)
+        target2 = _lvce.get("target2", trr)
         direction = "LONG"
         # Frame entry RELATIVE to current price (Keith daily-actionable style)
         if pos < 0.25:
@@ -892,9 +1074,9 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
             parts.append(f"🔴 **Extended ({pos:.0%}, dekat TRR)** — JANGAN kejar. Trim kalau udah punya, atau tunggu reset ke {_f(lrr)} ({((lrr/px-1)*100):+.1f}%).")
         parts.append(f"**Stop:** < {_f(stop)} · **T1:** {_f(target1)} ({((target1/px-1)*100):+.1f}%) · **T2:** {_f(target2)} ({((target2/px-1)*100):+.1f}%)")
     elif bear:
-        stop = trr + width * 0.30
-        target1 = lrr
-        target2 = (rr.get("trend", {}).get("lrr", 0) or lrr)
+        stop = _lvce.get("stop", trr + width * 0.30)
+        target1 = _lvce.get("target", lrr)
+        target2 = _lvce.get("target2", lrr)
         direction = "SHORT" if market_key != "ihsg" else "AVOID/WAIT"
         if market_key == "ihsg":
             parts.append(f"🔴 **IHSG buy-only — HINDARI.** Bearish ({_f(px)}). Tunggu reclaim {_f(lrr)} ({((lrr/px-1)*100):+.1f}%) sebelum mikir akumulasi.")
@@ -1100,7 +1282,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s41"
+_CARD_BUILD = "s43"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1452,41 +1634,32 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
 
     # ── ENTRY / TARGET / STOP (TRR/LRR base; walls refine if real) ──
     entry_zone = None; confluence = []; target = None; stop = None
-    if direction == "long":
-        # Buy the dip toward TRADE LRR (Keith). If price already below LRR, buy now.
-        e_lo, e_hi = t_lrr, (t_lrr + width * 0.30)
+    _lv = _directional_levels(px, direction, t_lrr=t_lrr, t_trr=t_trr, tr_lrr=tr_lrr, tr_trr=tr_trr,
+                              tl_lrr=tl_lrr, tl_trr=(tail.get("trr", 0) or 0),
+                              call_wall=cwall if has_real_opts else None,
+                              put_wall=pwall if has_real_opts else None)
+    if direction == "long" and _lv:
+        e_lo, e_hi = _lv["entry_lo"], _lv["entry_hi"]
         entry_zone = f"{f(e_lo)}–{f(e_hi)}" + (" (beli sekarang, udah di support)" if px <= e_hi else " (tunggu pullback ke sini)")
         if has_real_opts and pwall:
             confluence.append(f"Put wall {f(pwall)} = support dealer ({pct(pwall)})")
             if abs(pwall - t_lrr) / px < 0.04:
                 confluence[-1] = f"🎯 Put wall {f(pwall)} ≈ TRADE LRR {f(t_lrr)} → support confluence kuat"
-        # Target: TREND TRR (or call wall if real & nearer/aligned)
-        tgt = tr_trr or px * 1.08
-        if has_real_opts and cwall:
-            if abs(cwall - tr_trr) / px < 0.05:
-                confluence.append(f"🎯 Call wall {f(cwall)} ≈ TREND TRR {f(tr_trr)} → target confluence")
-                tgt = min(cwall, tr_trr)
-            else:
-                confluence.append(f"Call wall {f(cwall)} = resistance dealer ({pct(cwall)})")
-                tgt = cwall
-        target = f"{f(tgt)} ({pct(tgt)})"
-        # Stop: below TREND LRR (medium-term support), fallback TRADE LRR - buffer
-        stop_lvl = tr_lrr if (tr_lrr and tr_lrr < px) else t_lrr * 0.97
-        stop = f"< {f(stop_lvl)} ({pct(stop_lvl)})"
-    elif direction == "short":
-        e_lo, e_hi = (t_trr - width * 0.30), t_trr
+        if has_real_opts and cwall and abs(cwall - _lv["target"]) / px < 0.05:
+            confluence.append(f"🎯 Call wall {f(cwall)} ≈ target {f(_lv['target'])} → resistance confluence")
+        target = f"{f(_lv['target'])} ({pct(_lv['target'])})"
+        stop = f"< {f(_lv['stop'])} ({pct(_lv['stop'])})"
+    elif direction == "short" and _lv:
+        e_lo, e_hi = _lv["entry_lo"], _lv["entry_hi"]
         entry_zone = f"{f(e_lo)}–{f(e_hi)}" + (" (short sekarang, udah di resistance)" if px >= e_lo else " (tunggu rip ke sini)")
         if has_real_opts and cwall:
             confluence.append(f"Call wall {f(cwall)} = resistance dealer ({pct(cwall)})")
             if abs(cwall - t_trr) / px < 0.04:
                 confluence[-1] = f"🎯 Call wall {f(cwall)} ≈ TRADE TRR {f(t_trr)} → resistance confluence"
-        tgt = tr_lrr or px * 0.92
-        if has_real_opts and pwall:
-            confluence.append(f"Put wall {f(pwall)} = target support ({pct(pwall)})")
-            tgt = pwall
-        target = f"{f(tgt)} ({pct(tgt)})"
-        stop_lvl = tr_trr if (tr_trr and tr_trr > px) else t_trr * 1.03
-        stop = f"> {f(stop_lvl)} ({pct(stop_lvl)})"
+        if has_real_opts and pwall and abs(pwall - _lv["target"]) / px < 0.05:
+            confluence.append(f"🎯 Put wall {f(pwall)} ≈ target {f(_lv['target'])} → support confluence")
+        target = f"{f(_lv['target'])} ({pct(_lv['target'])})"
+        stop = f"> {f(_lv['stop'])} ({pct(_lv['stop'])})"
     else:
         entry_zone = f"{f(t_lrr)} (beli) / {f(t_trr)} (jual) — range, fade extremes"
 

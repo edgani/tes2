@@ -189,6 +189,96 @@ def evaluate(ticker: str, *, dxy_trend=None, real_yield_30d_bp=None, gold_30d_re
     return out
 
 
+def _coerce_trend(val, prev=None):
+    """Turn a level+prev (or a series) into a -1/0/+1 trend sign."""
+    try:
+        if isinstance(val, (list, tuple)) and len(val) >= 2:
+            a, b = float(val[-1]), float(val[max(0, len(val) - 21)])
+            if b:
+                ch = (a - b) / abs(b)
+                return 1 if ch > 0.005 else -1 if ch < -0.005 else 0
+        v, p = float(val), (float(prev) if prev is not None else None)
+        if p is not None and p:
+            ch = (v - p) / abs(p)
+            return 1 if ch > 0.005 else -1 if ch < -0.005 else 0
+    except (TypeError, ValueError, ZeroDivisionError):
+        pass
+    return None
+
+
+def evaluate_from_snap(snap: dict, ticker: str, peers: Optional[dict] = None) -> dict:
+    """Adapter: pull whatever macro fields the live snap carries → engine inputs. Fully defensive:
+    every field is optional and the engine returns neutral/n/a when data is absent (never raises).
+
+    Reads (best-effort, multiple shapes tolerated):
+      - DXY trend  ← snap['dxy'] (level, {level,prev}, or series) / snap['dxy_series']
+      - real yield ← snap['real_yield'] or snap['macro']['real_yield'] (30d Δbp if a series is present)
+      - gold/silver px ← snap own price + `peers` map {'gold':px,'silver':px} when provided (for GSR)
+      - oil curve  ← snap['oil_front']/snap['oil_deferred'] when present
+      - TRADE/TREND/TAIL phases ← snap['risk_range'] phase signs when present
+    Caller is expected to pass `peers` for GSR (cross-ticker) since a single-ticker snap won't have both.
+    """
+    snap = snap or {}
+    macro = snap.get("macro") or {}
+
+    # DXY trend
+    dxy_trend = None
+    if "dxy_series" in snap:
+        dxy_trend = _coerce_trend(snap.get("dxy_series"))
+    if dxy_trend is None:
+        dv = snap.get("dxy")
+        if isinstance(dv, dict):
+            dxy_trend = _coerce_trend(dv.get("level"), dv.get("prev"))
+        else:
+            dxy_trend = _coerce_trend(dv, snap.get("dxy_prev") or macro.get("dxy_prev"))
+
+    # real yield (level → coarse bp proxy if no series)
+    ry = snap.get("real_yield", macro.get("real_yield"))
+    ry_bp = None
+    try:
+        if isinstance(ry, (list, tuple)) and len(ry) >= 2:
+            ry_bp = (float(ry[-1]) - float(ry[max(0, len(ry) - 21)])) * 100.0
+        elif ry is not None:
+            ry_bp = None  # only a level; leave bp unknown (engine downweights anyway)
+    except (TypeError, ValueError):
+        ry_bp = None
+
+    # ticker 30d return (for GYDI paradox on gold)
+    g30 = None
+    for k in ("price_series", "closes", "prices"):
+        s = snap.get(k)
+        if isinstance(s, (list, tuple)) and len(s) > 21 and s[-21]:
+            try:
+                g30 = (float(s[-1]) - float(s[-21])) / float(s[-21]); break
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+
+    # GSR needs both metals — only if caller supplied peers
+    gold_px = silver_px = None
+    if peers:
+        gold_px = peers.get("gold") or peers.get("XAUUSD") or peers.get("GC=F")
+        silver_px = peers.get("silver") or peers.get("XAGUSD") or peers.get("SI=F")
+
+    # phases from risk_range if present (sign of each duration's bias)
+    rr = snap.get("risk_range") or {}
+    def _ph(side):
+        v = rr.get(side) or rr.get(side.lower()) or {}
+        if isinstance(v, dict):
+            b = v.get("bias") or v.get("phase_sign") or v.get("signal")
+            return _coerce_trend([0, b]) if isinstance(b, (int, float)) else 0
+        return 0
+
+    return evaluate(
+        ticker,
+        dxy_trend=dxy_trend, real_yield_30d_bp=ry_bp, gold_30d_ret=g30,
+        cb_buying_strong=snap.get("cb_buying_strong"),
+        front_px=snap.get("oil_front"), deferred_px=snap.get("oil_deferred"),
+        gold_px=gold_px, silver_px=silver_px,
+        commercial_idx=snap.get("cot_commercial_idx"), spec_idx=snap.get("cot_spec_idx"),
+        trade_phase=_ph("TRADE"), trend_phase=_ph("TREND"), tail_phase=_ph("TAIL"),
+    )
+
+
 if __name__ == "__main__":
     print("=== SELF-TEST fx_commodity_driver_engine ===")
     # COT index
@@ -230,4 +320,12 @@ if __name__ == "__main__":
     assert eg["driver"]["bias"] == 1 and eg["confluence"]["conviction"] == "FULL", eg
     assert eo["driver"]["bias"] == 1, eo
     print("✓ evaluate:", eg["driver"]["label"], "/", eg["confluence"]["conviction"], "|", eo["driver"]["label"])
+    # snap adapter (defensive): synthetic snap with dxy series down + peers for GSR
+    snap = {"dxy_series": [104 - i * 0.12 for i in range(25)],
+            "price_series": [4800] * 20 + [5000], "risk_range": {}}
+    es = evaluate_from_snap(snap, "XAUUSD", peers={"gold": 5000, "silver": 50})
+    assert es["driver"]["bias"] == 1, es  # DXY trending down → gold bullish
+    assert es["gsr"]["favor"] == "silver", es
+    assert evaluate_from_snap({}, "GC=F")["driver"]["bias"] == 0  # empty snap → neutral, no crash
+    print("✓ evaluate_from_snap:", es["driver"]["label"], "| GSR", es["gsr"]["label"])
     print("ALL TESTS PASSED ✅")
