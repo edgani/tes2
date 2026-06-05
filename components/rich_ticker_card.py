@@ -1025,7 +1025,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s37"
+_CARD_BUILD = "s38"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1573,33 +1573,41 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
         bits.append(" ".join(w))
     header = " · ".join(bits) + f" <span style='opacity:0.55;font-size:0.82em'>({src})</span>"
 
-    rows = [header, f"{dir_emoji} <b>Posisi:</b> {rec['instrument']}{conv}"]
-    if rec["entry_zone"]: rows.append(f"<b>Entry:</b> {rec['entry_zone']}")
+    # LEFT column = the trade plan; RIGHT column = entry styles + microstructure/context.
+    # (Was one narrow left strip leaving the right half empty — the thing circled across all markets.)
+    left_rows = [f"{dir_emoji} <b>Posisi:</b> {rec['instrument']}{conv}"]
+    if rec["entry_zone"]: left_rows.append(f"<b>Entry:</b> {rec['entry_zone']}")
     for c in rec["confluence"][:2]:
-        rows.append(f"<span style='opacity:0.85'>&nbsp;&nbsp;↳ {c}</span>")
-    if rec["target"]: rows.append(f"<b>Target:</b> {rec['target']}  ·  <b>Stop:</b> {rec['stop']}")
-    if rec["by_expiry"]: rows.append(f"<b>Expected move:</b> {rec['by_expiry']}")
-    if rec["breakout_up"]: rows.append(f"<span style='opacity:0.85'>📈 {rec['breakout_up']}</span>")
-    if rec["breakout_down"]: rows.append(f"<span style='opacity:0.85'>📉 {rec['breakout_down']}</span>")
-    # Multi-positioning: spot vs leverage (only when ≥2 ways exist)
+        left_rows.append(f"<span style='opacity:0.85'>&nbsp;&nbsp;↳ {c}</span>")
+    if rec["target"]: left_rows.append(f"<b>Target:</b> {rec['target']}  ·  <b>Stop:</b> {rec['stop']}")
+    if rec["by_expiry"]: left_rows.append(f"<b>Expected move:</b> {rec['by_expiry']}")
+    if rec["breakout_up"]: left_rows.append(f"<span style='opacity:0.85'>📈 {rec['breakout_up']}</span>")
+    if rec["breakout_down"]: left_rows.append(f"<span style='opacity:0.85'>📉 {rec['breakout_down']}</span>")
+
+    right_rows = []
     if rec.get("positions") and len(rec["positions"]) >= 2:
-        rows.append("<b>🎚️ Cara masuk (pilih sesuai gaya):</b>")
+        right_rows.append("<b>🎚️ Cara masuk (pilih sesuai gaya):</b>")
         for p in rec["positions"]:
-            rows.append(f"<span style='opacity:0.9'>&nbsp;&nbsp;{p['type']}: {p['detail']}</span>")
-    if rec["dealer"]: rows.append(f"<span style='opacity:0.8'><b>Dealer:</b> {rec['dealer']}</span>")
-    if rec["vanna_charm"]: rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
-    if rec["dark_pool"]: rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
-    if rec["cot"]: rows.append(f"<span style='opacity:0.8'><b>COT:</b> {rec['cot']}</span>")
-    if rec.get("onchain"): rows.append(f"<span style='opacity:0.8'><b>⛓️ On-chain:</b> {rec['onchain']}</span>")
-    if rec["keith"]: rows.append(f"<span style='opacity:0.65'>📌 {rec['keith']}</span>")
+            right_rows.append(f"<span style='opacity:0.9'>&nbsp;&nbsp;{p['type']}: {p['detail']}</span>")
+    if rec["dealer"]: right_rows.append(f"<span style='opacity:0.8'><b>Dealer:</b> {rec['dealer']}</span>")
+    if rec["vanna_charm"]: right_rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
+    if rec["dark_pool"]: right_rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
+    if rec["cot"]: right_rows.append(f"<span style='opacity:0.8'><b>COT:</b> {rec['cot']}</span>")
+    if rec.get("onchain"): right_rows.append(f"<span style='opacity:0.8'><b>⛓️ On-chain:</b> {rec['onchain']}</span>")
+    if rec["keith"]: right_rows.append(f"<span style='opacity:0.65'>📌 {rec['keith']}</span>")
     extras = []
     if rec.get("pcr") is not None: extras.append(f"PCR {rec['pcr']:.2f}")
-    if extras: rows.append(f"<span style='opacity:0.6;font-size:0.85em'>{' · '.join(extras)}</span>")
+    if extras: right_rows.append(f"<span style='opacity:0.6;font-size:0.85em'>{' · '.join(extras)}</span>")
 
+    _left = "<br>".join(left_rows)
+    _right = "<br>".join(right_rows) if right_rows else "<span style='opacity:0.35'>—</span>"
     st.markdown(
-        f"<div style='border-left:3px solid {bar};padding:2px 0 2px 12px;margin:2px 0 6px;"
-        f"font-size:0.86rem;line-height:1.7;'>"
-        + "<br>".join(rows) + "</div>",
+        f"<div style='background:#0d1117;border:1px solid #21262d;border-left:4px solid {bar};"
+        f"border-radius:8px;padding:10px 14px;margin:4px 0 8px;font-size:0.85rem;line-height:1.65;'>"
+        f"<div style='font-weight:600;margin-bottom:7px;'>{header}</div>"
+        f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px 22px;'>"
+        f"<div>{_left}</div><div>{_right}</div></div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
     return True

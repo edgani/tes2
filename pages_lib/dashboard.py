@@ -7,7 +7,7 @@ def render(snap: dict):
     # Tight layout so the whole dashboard fits ~one frame. The biggest win is killing Streamlit's
     # default ~6rem block-container top padding; then we tighten every gap/margin.
     st.markdown("""<style>
-    .block-container{padding-top:1.3rem !important;padding-bottom:0.2rem !important;max-width:100% !important;}
+    .block-container{padding-top:1.3rem !important;padding-bottom:3rem !important;max-width:100% !important;}
     [data-testid="stVerticalBlock"]{gap:0.22rem !important;}
     [data-testid="stHorizontalBlock"]{gap:0.4rem !important;}
     [data-testid="stMetric"]{padding:0 !important;}
@@ -22,6 +22,7 @@ def render(snap: dict):
     [data-testid="stExpander"]{margin:0 !important;}
     hr{margin:0.15rem 0 !important;}
     h1,h2,h3,h4{margin-top:0.05rem !important;margin-bottom:0.15rem !important;padding-top:0 !important;}
+    [data-testid="stVerticalBlockBorderWrapper"]{border:1px solid #30363d !important;border-radius:10px !important;}
     </style>""", unsafe_allow_html=True)
     try:
         from pages_lib._dashboard_legacy import render as _legacy_render
@@ -170,7 +171,8 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
             _l2 = (f"<span style='color:#8b949e;'><b>Pindah:</b> {_pindah}</span>" if _pindah else "")
             _l3 = (f"🎯 <b>{_hint}</b>" if _hint else "") + (f"<span style='color:#8b949e;'> · ⚡ {_chips}</span>" if _chips else "")
             _body = "<br>".join([x for x in [_l1, _l2, _l3] if x])
-            st.markdown(f"<div style='background:#0d1117;border-radius:6px;padding:6px 10px;margin-top:5px;"
+            st.markdown(f"<div style='background:#161b22;border:1px solid #30363d;border-left:3px solid #d29922;"
+                        f"border-radius:6px;padding:7px 11px;margin-top:6px;"
                         f"font-size:0.78rem;line-height:1.5;'>{_body}</div>", unsafe_allow_html=True)
     with ecol:
         with st.container(border=True):
