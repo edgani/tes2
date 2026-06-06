@@ -1282,7 +1282,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s44"
+_CARD_BUILD = "s45"
 
 
 def _render_greeks_panel(snap, ticker, market_key, px):
@@ -1350,6 +1350,20 @@ def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_oncha
     if market_key in ("us_equity", "crypto") and show_options:
         try:
             _render_greeks_panel(snap, ticker, market_key, px)
+        except Exception:
+            pass
+    # On-chain panel (crypto) — uses REAL DeFiLlama TVL flow; honest n/a for netflow/whale/MVRV (need feed)
+    if market_key == "crypto" and show_onchain:
+        try:
+            from engines.onchain_engine import evaluate_from_snap as _oc
+            _r = _oc(snap, ticker)
+            if _r.get("available", 0) > 0:
+                _e = "🟢" if _r["verdict"] > 0 else "🔴" if _r["verdict"] < 0 else "⚪"
+                _bits = [p["reason"] for p in _r["parts"].values() if p.get("bias")]
+                _tvl = _r.get("tvl_usd")
+                _tvls = f" · TVL ${_tvl/1e9:.2f}B" if isinstance(_tvl, (int, float)) and _tvl else ""
+                st.caption(f"⛓️ **On-chain:** {_e} {_r['label']}{_tvls}"
+                           + (" · " + " · ".join(_bits) if _bits else "") + f"  \n_{_r['note']}_")
         except Exception:
             pass
     # OI heatmap for forex/commodities (per spec) — FX honest N/A→COT, commodity real ETF-proxy OI, no fake walls

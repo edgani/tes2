@@ -372,8 +372,23 @@ def render(snap: dict):
                 st.metric("Price", px_str)
             with hc3:
                 _rdy = _readiness(rr, cand)
+                _asc = _alpha_score(cand, rr)
                 st.caption(f"{action_emoji} **{action}**")
                 st.caption(f"{_rdy['label']} · {_rdy['score']}/100")
+            # ── ALPHA SCANNER routing verdict (potential × readiness → ALPHA-READY/WARMING/EARLY/WATCH) ──
+            try:
+                from engines.alpha_scanner import route_alpha
+                _rt = route_alpha(_asc.get("score", 0), _rdy.get("score", 0))
+                _rtc = {"ALPHA-READY": "#3FB950", "ALPHA-WARMING": "#D29922", "EARLY-ALPHA": "#58A6FF",
+                        "ALPHA-WATCH": "#8B949E", "NOT-ALPHA": "#6E7681"}.get(_rt["verdict"], "#8B949E")
+                _extra = " — borderline, harusnya di market tab biasa" if _rt["route"] == "market_tab" else ""
+                st.markdown(
+                    f"<div style='background:{_rtc};color:#0D1117;padding:3px 8px;border-radius:5px;"
+                    f"font-weight:800;font-size:0.72rem;display:inline-block;margin:2px 0 4px'>"
+                    f"{_rt['emoji']} {_rt['verdict']} · potential {_rt['alpha_score']} × ready {_rt['readiness_score']}{_extra}</div>",
+                    unsafe_allow_html=True)
+            except Exception:
+                pass
 
             # ── BLOCK 1 per spec: ONE block — main chart → setup → companions → extras ──
             _mkt = cand.get("market", "us_equity")

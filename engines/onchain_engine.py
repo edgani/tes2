@@ -159,6 +159,45 @@ def onchain_composite(net_exchange_flow_7d=None, reserve_now=None, reserve_30d_a
             "parts": parts}
 
 
+def tvl_flow_signal(tvl_change_7d_pct=None) -> dict:
+    """DeFiLlama TVL 7d change: capital flowing INTO the chain = on-chain accumulation proxy.
+    NOTE: TVL ≠ exchange netflow/whale supply — it's DeFi locked capital, a softer/different flow signal."""
+    c = _num(tvl_change_7d_pct)
+    if c is None:
+        return {"bias": 0, "label": "TVL n/a", "reason": "no DeFiLlama TVL"}
+    if c > 5:
+        return {"bias": 1, "label": "TVL inflow", "reason": f"TVL +{c:.1f}% 7d → capital masuk chain (akumulasi on-chain)"}
+    if c < -5:
+        return {"bias": -1, "label": "TVL outflow", "reason": f"TVL {c:.1f}% 7d → capital keluar chain"}
+    return {"bias": 0, "label": "TVL flat", "reason": f"TVL {c:+.1f}% 7d"}
+
+
+def evaluate_from_snap(snap: dict, ticker: str) -> dict:
+    """On-chain read from whatever REAL data the snap carries (DeFiLlama TVL + funding if present).
+    Honest: exchange netflow / whale / MVRV / SOPR / CORNERING need a Glassnode/CryptoQuant feed the
+    system doesn't fetch — those stay n/a until a feed is supplied (don't fabricate)."""
+    snap = snap or {}
+    od = (snap.get("onchain_data", {}) or {}).get(ticker, {})
+    od = od if isinstance(od, dict) else {}
+    tvl_chg = od.get("tvl_change_7d")
+    funding = od.get("funding_rate")  # only if a real feed populated it
+    parts = {"tvl_flow": tvl_flow_signal(tvl_chg), "funding": funding_signal(funding)}
+    biases = [p["bias"] for p in parts.values() if p["bias"] != 0]
+    score = sum(biases); n = len(biases)
+    if n == 0:
+        verdict, label = 0, "on-chain n/a (butuh feed Glassnode/CryptoQuant buat netflow/whale/MVRV)"
+    elif score >= 1:
+        verdict, label = 1, "AKUMULASI on-chain (TVL inflow)"
+    elif score <= -1:
+        verdict, label = -1, "DISTRIBUSI on-chain (TVL outflow)"
+    else:
+        verdict, label = 0, "on-chain netral"
+    return {"verdict": verdict, "label": label, "score": score, "available": n, "parts": parts,
+            "tvl_usd": od.get("tvl") or od.get("tvl_usd"), "source": od.get("source", "none"),
+            "note": ("Sinyal dari DeFiLlama TVL (proxy DeFi locked-capital). Exchange netflow / whale / "
+                     "MVRV / SOPR / cornering butuh feed Glassnode/CryptoQuant — belum ada di sistem.")}
+
+
 if __name__ == "__main__":
     print("=== SELF-TEST onchain_engine ===")
     assert netflow_signal(-900_000_000)["bias"] == 1
@@ -184,4 +223,11 @@ if __name__ == "__main__":
     # no data → neutral, no crash
     assert onchain_composite()["verdict"] == 0
     print("✓ defensive (no data)")
+    # tvl flow + snap adapter (DeFiLlama)
+    assert tvl_flow_signal(8)["bias"] == 1 and tvl_flow_signal(-8)["bias"] == -1 and tvl_flow_signal(1)["bias"] == 0
+    snap = {"onchain_data": {"BTC-USD": {"tvl": 5e9, "tvl_change_7d": 9.2, "source": "defillama"}}}
+    ev = evaluate_from_snap(snap, "BTC-USD")
+    assert ev["verdict"] == 1 and ev["available"] == 1 and ev["source"] == "defillama", ev
+    assert evaluate_from_snap({}, "ETH-USD")["available"] == 0  # no feed → n/a, no crash
+    print("✓ tvl_flow + evaluate_from_snap →", ev["label"])
     print("ALL TESTS PASSED ✅")

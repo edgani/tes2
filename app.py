@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s44 — (1) GREEKS RESTORED: panel live options (net GEX + regime, γ-flip, max-pain, call/put wall, P/C, expected-move, DEX, dark-pool) balik muncul di US + crypto — cuma kalau options REAL (gak ada greeks palsu); sebelumnya ke-drop pas merge setup box s40. (2) DASHBOARD: box quad di chart sekarang headline pendek aja (Q3→Q2 + action), detail why/pindah/chips jadi caption DI BAWAH map (gak nutupin cell/marker lagi); Boom-Bust double-header dibuang (1 header bersih); Crash Meter label dibesarin biar kebaca. (3) Filter per-market di-audit: split long/short (bias phase/formation/action) + quality A/A+ (fallback B) = bener; crypto 0-long/32-short = semua di bawah trend (bearish regime), bukan bug. + s43: direction fix (short target di bawah/stop di atas) + real_flow_engine.")
+    st.caption("v40 · build 2026-06-03-s45 — WIRING 2 engine terakhir: (a) ALPHA-SCANNER routing verdict (🚀 ALPHA-READY / 👀 WARMING / 🌱 EARLY / 📋 WATCH / ↩️ NOT-ALPHA) sekarang muncul di tiap kartu Alpha Center = potential × readiness, non-alpha ditandain harusnya ke market tab. (b) ON-CHAIN panel di crypto (⛓️) pakai DeFiLlama TVL flow yang REAL (akumulasi/distribusi on-chain + TVL $); JUJUR: exchange netflow/whale/MVRV/SOPR/cornering butuh feed Glassnode/CryptoQuant — ditandai n/a, gak dikarang. Real-flow + greeks panel udah otomatis muncul di Alpha Center juga (lewat render bareng). Semua 7 engine self-test PASS.")
     st.divider()
     
     page = st.radio("Navigation", [

@@ -139,6 +139,29 @@ def classify_alpha(features: dict) -> dict:
             "alpha_score": p, "readiness_score": r}
 
 
+def route_alpha(potential_score, readiness_score) -> dict:
+    """Routing verdict from PRE-COMPUTED potential + readiness scores (0–100). Lets a caller that already
+    has its own potential/readiness (e.g. Alpha Center's _alpha_score/_readiness) reuse the same ladder
+    without re-deriving features. Mirrors classify_alpha's thresholds."""
+    try:
+        p = max(0.0, min(100.0, float(potential_score or 0)))
+        r = max(0.0, min(100.0, float(readiness_score or 0)))
+    except (TypeError, ValueError):
+        p = r = 0.0
+    if p >= 60 and r >= 60:
+        verdict, route, emoji = "ALPHA-READY", "alpha_center", "🚀"
+    elif p >= 60 and r >= 35:
+        verdict, route, emoji = "ALPHA-WARMING", "alpha_center", "👀"
+    elif p >= 60:
+        verdict, route, emoji = "EARLY-ALPHA", "alpha_center", "🌱"
+    elif p >= 45:
+        verdict, route, emoji = "ALPHA-WATCH", "alpha_center", "📋"
+    else:
+        verdict, route, emoji = "NOT-ALPHA", "market_tab", "↩️"
+    return {"verdict": verdict, "route": route, "emoji": emoji,
+            "alpha_score": int(p), "readiness_score": int(r)}
+
+
 def scan(universe_features: dict) -> dict:
     """universe_features: {ticker: features}. Returns ranked alpha names + the market-tab remainder."""
     rows = []
