@@ -1,60 +1,46 @@
 # GCFIS — Global Capital Flow Intelligence System
-### Validated engine layer for MacroRegime Pro v40
+### Full 13-layer validated engine layer for MacroRegime Pro v40
 
-GCFIS is the re-designed, **validated** core that sits on top of your v40 data layer. It fixes the
-structural flaws (dogmatic quad mapping, static weights, level-not-change, GIGO proxies, engine
-sprawl) with formulas that are normalized, change-centric, regime-conditional, and **tested**.
+## 4 principles every engine obeys
+1. **CHANGE not LEVEL** (Δz / acceleration everywhere). 2. **NORMALIZE then COMBINE** (robust median/MAD z).
+3. **REGIME-CONDITIONAL** (meta weights blend by HMM posterior). 4. **VALIDATE not FABRICATE** (no chain → dealer returns `unknown`, never fakes greeks).
 
-## The 4 principles every engine obeys
-1. **CHANGE not LEVEL** — every metric has a Δz / acceleration form. (Validated on real macro data:
-   growth *acceleration* was the predictive feature, OOS.)
-2. **NORMALIZE then COMBINE** — robust median/MAD z-scores before any combination (no raw-unit sums/products).
-3. **REGIME-CONDITIONAL** — meta weights blend by HMM posterior (crisis→fragility/shock dominate; risk-on→theme/accumulation).
-4. **VALIDATE not FABRICATE** — proxies allowed only if calibrated + down-weighted; momentum-as-greek is banned.
-
-## Engines (all pass the synthetic correctness suite)
-| Module | Closes | What it does |
+## Full GCFIS 13-layer coverage (all pass `tests/test_all.py`)
+| Layer | Module | What it does |
 |---|---|---|
-| `core/change_core.py` | philosophy | robust-z, Δz, acceleration, pct-rank, logistic, FDR, **CSD** (critical-slowing-down early warning) |
-| `engines/leadlag_discovery.py` | Gap#1 (3/10) | DYNAMIC lead-lag discovery — returns + Granger + Transfer-Entropy + **FDR** + stability + direction. Output: `leader→follower, lag, confidence`. Backbone of the capital-flow graph. |
-| `engines/change_detection.py` | Druckenmiller | per-metric regime-of-change (ACCELERATING_UP/DECELERATING/…) |
-| `engines/fragility.py` | shock radar | fragility 0-100 with **non-linear amplifiers** (correlation conduit × CSD) + velocity |
-| `engines/shock.py` | shock radar | probabilistic P(shock/regime-break) from market stress + CSD |
-| `engines/forward_macro.py` | Quad latency | Market-Implied Forward Growth/Inflation → **forward** Quad (daily, leads reported GDP/CPI). `.fit()` does ridge on your real data. |
-| `engines/accumulation.py` | next-PLTR | Accumulation (RS=alpha, signed VE) + **Institutional Adoption Curve** (Stage 1-5) + crowding velocity + sweet-spot/exit |
-| `engines/broker_flow.py` | bandarmologi | order-flow INTENT: BUILDING / SCALPING / ABSORBING / PANIC / DELIBERATE distribution |
-| `meta/regime_meta.py` | Gap#8 | regime-conditional weighting + **MASTER RANKING** (long/short/spot) + counter-regime flow-dominance |
-| `orchestrator.py` | — | runs the whole stack → dashboard + ranking |
-| `adapter_v40.py` | — | bridge to v40 `load_prices` / `markov_v3` regime |
+| L1 Fragility | `engines/fragility.py` | 0-100 + non-linear amplifiers (corr conduit × CSD) + velocity |
+| L2 Macro/Quad | `engines/forward_macro.py` | Market-Implied Forward Growth/Inflation → **forward** Quad (leads GDP/CPI) |
+| L3 Liquidity | `engines/liquidity.py` | NetLiq = FedBS−TGA−RRP (correct signs); expanding vs zero-baseline; dominance flag |
+| L4 Flow | `engines/flow.py` | capital rotation — who's gaining/losing relative strength (rotating in/out) |
+| L5 Theme | `engines/theme.py` | Theme = 0.4·ΔEarnRev + 0.3·CohortRS + 0.2·ΔFlow + 0.1·Narrative |
+| L6 Bottleneck | `engines/bottleneck_engine.py` | **geometric mean** of normalized factors (+ PricingPower) — any-zero-kills; node ranking |
+| L7 Accumulation | `engines/accumulation.py` | RS=alpha, signed VE, + Institutional **Adoption Curve** (Stage 1-5) + crowding velocity + sweet-spot/exit |
+| L8 Dealer | `engines/dealer.py` | **real signed GEX/Vanna** (Black-Scholes from chain); GEX>0=mean-rev, GEX<0=momentum; walls + gamma-flip |
+| L9 Positioning | `engines/positioning.py` | COT (Williams) index, OI ROC (Δz), crowding, extreme-long/short |
+| L10 Crypto | `engines/crypto.py` | post-ETF weighted: ETF flow+funding+CME basis+perp OI dominant; on-chain regime-gated |
+| L11 Lead-Lag | `engines/leadlag_discovery.py` | DYNAMIC discovery: returns+Granger+Transfer-Entropy+**FDR**+stability → `leader→follower, lag, conf` |
+| L12 Asset Selection | `meta/regime_meta.py` | regime-conditional **confluence** (accum+theme+flow) + **master ranking** + capacity filter + counter-regime flow-dominance |
+| L13 **Entry** | `engines/entry.py` | Entry = 0.25Trend+0.25Mom+0.20Dealer+0.15Liq+0.15Structure → **Breakout/Pullback/Continuation/Mean-Reversion**, **gamma-aware** (wrong-regime entries flagged INVALID) + risk-range stop/target/RR |
+| — change core | `core/change_core.py` | robust-z, Δz, acceleration, FDR, CSD; `core/contracts.py` typed per-ticker output |
+| — sizing | `sizing.py` | fractional-Kelly × vol-target × VIX-bucket × drawdown — **gated** (no edge → 0) |
+| — backtest | `backtest.py` | walk-forward honest metrics: cross-sectional IC + permutation, Wilson CI (non-overlap), Deflated Sharpe |
+| — orchestrator/adapter/run | `orchestrator.py`, `adapter_v40.py`, `run.py` | wires all 13 → full per-ticker contract + master ranking; CLI for your machine |
 
-## Run the tests
+## Gamma-aware entry (the fix)
+- **GEX < 0 (momentum regime):** Breakout / Continuation valid (dealers amplify).
+- **GEX > 0 (mean-reversion regime):** Pullback / Mean-Reversion valid; **breakout flagged INVALID** ("dealers fade — likely to fail").
+- Every entry returns stop, target, R/R; R/R below threshold → invalid.
+- Counter-regime: bullish quad but smart-money distributing → flips to short / stand-aside.
+
+## Run
 ```bash
-python3 gcfis/tests/test_all.py      # synthetic correctness — all engines + end-to-end
+python3 gcfis/tests/test_all.py     # 13 layers + entry + e2e — all pass
+python3 -m gcfis.run --tickers NVDA PLTR --bench SPY --regime risk_on   # on your machine (yfinance)
 ```
 
-## Wire into v40 (no duplication)
-```python
-from gcfis.orchestrator import run_gcfis
-from gcfis.adapter_v40 import get_prices_from_v40, get_regime_posterior_from_v40
-prices = get_prices_from_v40(start="2023-01-01")
-posterior = get_regime_posterior_from_v40(prices)
-out = run_gcfis(prices, bench=prices["SPY"], regime_posterior=posterior,
-                systemic_inputs={...}, growth_inputs={...}, infl_inputs={...},
-                broker_flow_by_ticker={"HUMI": [...]})
-out["ranking"]["master_long"]   # ranked long candidates
-out["systemic"]["forward_macro"]["forward_quad"]
-```
-The orchestrator exposes hooks so you can plug the validated **frontrun_engine** modules
-(`regime_edge.py`, `decision.py`, `sizing.py`, `broker_flow.py`) instead of duplicating them.
-
-## ⚠️ HONEST BOUNDARY — read this
-**Validated here:** every engine's LOGIC (synthetic correctness), all imports, the full orchestrator
-end-to-end. The statistical machinery (FDR, Granger, TE, CSD, z-scoring) is correct.
-
-**NOT validated here (you must run on your machine):** real-market EDGE. This sandbox has **no market-data
-access** (yfinance/FRED/Glassnode are not reachable), so no real backtest was run. Whether these signals
-actually predict your markets is an **empirical question answerable only on real data** with a proper
-walk-forward (purged k-fold + embargo, point-in-time, anti-survivorship).
-**No engine here claims accuracy.** A signal that can't beat a naive baseline OOS should be cut.
-
-This is a validated *instrument*, not a proven *edge*. The edge is yours to verify.
+## ⚠️ HONEST BOUNDARY
+**Validated:** every layer's LOGIC (synthetic correctness) + the statistical machinery on **real** S&P data
+(`VALIDATION_REAL.md`: harness has power — momentum perm_p 0.007 vs random 0.192; no-look-ahead; honestly strict).
+**You must run:** real-market EDGE on YOUR universe (small-caps + broker flow, IHSG, crypto on-chain) — sandbox
+has no live data. Dealer/positioning/crypto/theme layers need their data feeds wired (they return `unknown`
+when absent, never fabricate). Hard rule: **perm_p<0.05 AND DSR≥0.95, or NOISE.**
