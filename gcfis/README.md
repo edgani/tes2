@@ -44,3 +44,18 @@ python3 -m gcfis.run --tickers NVDA PLTR --bench SPY --regime risk_on   # on you
 **You must run:** real-market EDGE on YOUR universe (small-caps + broker flow, IHSG, crypto on-chain) — sandbox
 has no live data. Dealer/positioning/crypto/theme layers need their data feeds wired (they return `unknown`
 when absent, never fabricate). Hard rule: **perm_p<0.05 AND DSR≥0.95, or NOISE.**
+
+---
+## v48 additions
+- **`engines/cross_asset.py`** — Cross-Asset Coherence: reads the whole tape together, classifies regime
+  (DELEVERAGING / STAGFLATION_SCARE / DEFLATION_GROWTH_SCARE / GROWTH_ON / MONETARY_EASING / MIXED) and
+  flags divergences (e.g. *gold↓ while nominal yields↓ = haven bid in bonds, not gold → real-yield/liquidation
+  override, NOT monetary easing*). Validated against the real June-2026 gold tape → DELEVERAGING.
+- **`engines/narrative.py`** — composes the logical WHY for every ticker (which layers fired + macro + entry plan).
+  **No recommendation without a reason.**
+- **Entry defer-gate** — in DELEVERAGING/DEFLATION_SCARE, new longs are auto-moved to `deferred_longs`
+  ("data good but price falling" guard — don't catch the liquidation knife).
+- **`dashboard.py`** — one reusable `render_gcfis_dashboard(out)` you call from ANY tab (Market, Alpha Center):
+  systemic radar (quad / cross-asset / fragility / shock / liquidity) + master long/short/spot/deferred with
+  Alpha-Center badges (✅ ALPHA-READY / 🟡 WAIT-ENTRY / 🔶 WARMING / 🔻 SHORT / 👁 WATCH / ⏸ DEFER) + reason + entry.
+- See `QUAD_AND_FILTER.md` for the verified quad mapping + ticker-filter conditions.

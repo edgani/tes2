@@ -15,6 +15,9 @@ from gcfis.engines.accumulation import run_accumulation
 from gcfis.engines.broker_flow import run_broker_flow
 from gcfis.engines.dealer import run_dealer
 from gcfis.engines.entry import run_entry
+from gcfis.engines.cross_asset import run_cross_asset
+from gcfis.engines.narrative import build_reason
+from gcfis.core.contracts import TickerSignal
 from gcfis.orchestrator import run_gcfis
 
 rng = np.random.default_rng(0); N = 400; idx = pd.bdate_range("2023-01-01", periods=N)
@@ -81,9 +84,40 @@ def t_end_to_end():
           f"entry={top['entry_type']} rr={top['rr']} stop={top['stop']} gamma={top['gamma_regime']} | "
           f"bottleneck={out['systemic']['bottleneck'].get('tightest_bottleneck')}  OK")
 
+def t_cross_asset():
+    snap={"gold":-0.79,"silver":-3.38,"oil":-4.02,"spx":-0.38,"ndx":-0.90,"btc":-2.81,"eth":-2.90,
+          "ust2y_chg":-0.65,"ust10y_chg":-0.53,"dxy_chg":-0.22,"vix_chg":0.91}  # Edward's real tape
+    r=run_cross_asset(snap); assert r["regime"]=="DELEVERAGING" and r["defer_longs"] and r["gold_silver_ratio_rising"]
+    assert any("BONDS" in d for d in r["divergences"])
+    eas=run_cross_asset({"gold":1.2,"ust10y_chg":-0.4,"dxy_chg":-0.3,"spx":0.5}); assert eas["regime"]=="MONETARY_EASING"
+    print(f"  cross_asset: Edward-tape={r['regime']} (defer={r['defer_longs']}) | gold-up+yields-down={eas['regime']}  OK")
+def t_narrative():
+    sig=TickerSignal(ticker="NVDA",action="BUILD_LONG",direction="long",conviction=82.0,
+                     entry_type="BREAKOUT",entry_valid=True,gamma_regime="momentum",entry_px=880,stop=845,target=950,rr=2.1)
+    td={"theme":"AI","theme_score":1.2,"stage":"INSTITUTIONAL","crowding":31,"sweet_spot":True,"broker_verdict":"NET_ACCUMULATION"}
+    txt=build_reason(sig,td,{"forward_quad":"Q1","fragility":20},{"regime":"GROWTH_ON","defer_longs":False})
+    assert "BUILD_LONG NVDA" in txt and "AI" in txt and "BREAKOUT" in txt and "R/R 2.1" in txt
+    # defer note appears when liquidation
+    txt2=build_reason(sig,td,{"forward_quad":"Q1"},{"regime":"DELEVERAGING","defer_longs":True})
+    assert "DEFER" in txt2
+    print(f"  narrative: '{txt[:90]}...'  OK")
+def t_cross_defer_e2e():
+    strong=S(100*np.exp(np.cumsum(rng.normal(0.003,0.012,N)))); weak=S(100*np.exp(np.cumsum(rng.normal(-0.001,0.012,N))))
+    vol=S(np.r_[rng.normal(1e6,1e5,N-60),rng.normal(2.5e6,2e5,60)])
+    snap={"gold":-0.79,"silver":-3.38,"oil":-4.02,"spx":-0.38,"btc":-2.81,"ust10y_chg":-0.53,"vix_chg":0.91}  # deleveraging
+    out=run_gcfis({"STRONG":strong,"WEAK":weak},bench,{"risk_on":0.8,"chop":0.2},
+                  growth_inputs={"sox":S(np.cumsum(rng.normal(0.02,0.1,N)))}, infl_inputs={"breakeven":S(np.cumsum(rng.normal(0,0.1,N)))},
+                  theme_baskets={"AI":["STRONG"]}, volumes={"STRONG":vol,"WEAK":vol}, cross_asset_snapshot=snap)
+    assert out["systemic"]["cross_asset"]["regime"]=="DELEVERAGING"
+    deferred=out["ranking"]["deferred_longs"]; longs=out["ranking"]["master_long"]
+    assert len(deferred)>=1 and not any(r["ticker"]=="STRONG" for r in longs), "STRONG long must be DEFERRED in liquidation"
+    assert "DEFER" in deferred[0]["reason"]
+    print(f"  defer e2e: cross={out['systemic']['cross_asset']['regime']} -> {deferred[0]['ticker']} deferred (not in {len(longs)} active longs)  OK")
+
 if __name__ == "__main__":
-    print("GCFIS full suite (13 layers + entry + e2e)"); print("-"*64)
+    print("GCFIS full suite (13 layers + entry + cross-asset + narrative + e2e)"); print("-"*64)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
-               t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,t_end_to_end):
+               t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
+               t_cross_asset,t_narrative,t_end_to_end,t_cross_defer_e2e):
         fn()
     print("-"*64); print("ALL TESTS PASSED")
