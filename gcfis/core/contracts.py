@@ -40,6 +40,7 @@ class TickerSignal:
     # Risk + Opportunity scenarios
     shock_prob: float = 0.0
     opportunity: dict = field(default_factory=dict)   # bear/base/bull/supercycle price targets
+    rotation: dict = field(default_factory=dict)   # lead-lag rotation timing (leader/lag/window/strength)
     # sizing (gated)
     alloc_pct: float = 0.0
     capacity_ok: bool = True

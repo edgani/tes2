@@ -62,6 +62,13 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
             meta_long *= 0.4; meta_short = min(100, meta_short + 20)
             reason = "distribution into strength (flow-dominance) — front-run the unwind"
         meta_long, meta_short = float(np.clip(meta_long, 0, 100)), float(np.clip(meta_short, 0, 100))
+        # lead-lag rotation: a follower primed by a freshly-fired leader gets a timing boost
+        rot = a.get("rotation_strength", 0.0)
+        if rot > 0 and W["long"] > 0.4:
+            boost = min(rot * 6.0, 18.0)
+            meta_long = float(np.clip(meta_long + boost, 0, 100))
+            r_ = a.get("rotation", {})
+            reason = (reason + "; " if reason else "") + f"rotation-primed by {r_.get('leader','?')} (fired {r_.get('days_since_fire','?')}d ago, ~{r_.get('window','?')}d window)"
 
         adv = a.get("adv"); cap_ok = (adv is None) or (adv >= min_adv)
         if not cap_ok:

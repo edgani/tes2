@@ -23,6 +23,7 @@ def build_reason(sig, ticker_data: dict, systemic: dict, cross: dict | None = No
     if ticker_data.get("bottleneck_node"):
         why.append(f"bottleneck node {ticker_data['bottleneck_node']} ({ticker_data.get('bottleneck_score','?')})")
     if ticker_data.get("runaway"): why.append("reflexive runaway loop (price×flow accelerating)")
+    if ticker_data.get("rotation"): why.append(f"rotation-primed by {ticker_data['rotation'].get('leader')} (lead-lag)")
     if ticker_data.get("broker_verdict") == "NET_ACCUMULATION": why.append("smart-money net buying")
     if ticker_data.get("broker_verdict") == "NET_DISTRIBUTION": why.append("smart-money DISTRIBUTING")
     if ticker_data.get("exit_signal"): why.append("late-stage / exit risk")

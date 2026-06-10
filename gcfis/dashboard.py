@@ -45,6 +45,8 @@ def card_html(r: dict, deferred: bool = False) -> str:
               + _chip("Pos", sc.get("positioning"), "#58a6ff")
               + (_chip("⚡runaway", "yes", "#bc4c00") if r.get("runaway") else "")
               + _chip("conflu", sc.get("confluence"), "#3fb950"))
+    rot = r.get("rotation") or {}
+    rotation_chip = (_chip("↻ rotation", f"primed by {rot.get('leader')} (fired {rot.get('days_since_fire')}d, ~{rot.get('window')}d window)", "#3fb950") if rot else "")
     if opt.get("is_real"):
         options = (_chip("GEX", ("+" if opt.get("gex_sign", 0) >= 0 else "") + str(opt.get("gex")), "#a371f7")
                    + _chip("γflip", opt.get("gamma_flip"), "#a371f7")
@@ -63,7 +65,7 @@ def card_html(r: dict, deferred: bool = False) -> str:
             f"<div style='margin-top:3px'>{scores}</div>"
             f"<div>{options}</div>"
             f"<div>{macro}</div>"
-            f"<div style='margin-top:2px'>{entry}</div>"
+            f"<div style='margin-top:2px'>{entry}{rotation_chip}{_chip('size×', r.get('alloc_mult'), '#8b949e') if r.get('alloc_mult',1)!=1 else ''}</div>"
             f"<div>📈 {scen}</div>"
             f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div></div>")
 
@@ -101,6 +103,11 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
     _section(rank.get("master_long", []), "🟢 LONG", "No qualified longs this regime.")
     _section(rank.get("master_short", []), "🔴 SHORT", "No qualified shorts.")
     _section(rank.get("master_spot", []), "💎 SPOT (uncrowded accumulation)", "No sweet-spot names.")
+    pf = rank.get("portfolio", {})
+    if pf.get("warning"):
+        st.warning("📦 Portfolio concentration: " + pf["warning"])
+    elif pf.get("effective_bets") is not None and pf.get("n_longs"):
+        st.caption(f"📦 Portfolio: {pf['effective_bets']} independent bets across {pf['n_longs']} longs")
     if rank.get("deferred_longs"):
         _section(rank["deferred_longs"], "⏸ DEFERRED LONGS (cross-asset gate)", "", deferred=True)
 

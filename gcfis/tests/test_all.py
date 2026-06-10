@@ -169,10 +169,43 @@ def t_full_contract_e2e():
           f"inst[rev={inst['revision']} own={inst['ownership_delta']} etf={inst['etf_flow']}] | "
           f"opp={opp['bear']}/{opp['base']}/{opp['bull']}/{opp['supercycle']}  OK")
 
+def t_rotation():
+    from gcfis.engines.rotation import run_rotation
+    r = np.random.default_rng(3); ix = pd.bdate_range("2023-01-01", periods=300)
+    lead = np.zeros(300); lead[-8] = 0.10; lead[-7] = 0.06
+    leadpx = pd.Series(100*np.exp(np.cumsum(r.normal(0,0.008,300)+lead)), index=ix)
+    follpx = pd.Series(100*np.exp(np.cumsum(r.normal(0,0.01,300))), index=ix)
+    prim = run_rotation([{"leader":"NVDA","follower":"VRT","lag":17,"confidence":85}], {"NVDA":leadpx,"VRT":follpx})
+    assert "VRT" in prim and prim["VRT"]["leader"] == "NVDA" and prim["VRT"]["window"] > 0
+    print(f"  LX rotation: VRT primed by NVDA (fired {prim['VRT']['days_since_fire']}d ago, ~{prim['VRT']['window']}d window, strength {prim['VRT']['strength']})  OK")
+def t_portfolio():
+    from gcfis.engines.portfolio import run_portfolio
+    r = np.random.default_rng(8); ix = pd.bdate_range("2023-01-01", periods=300); base = np.cumsum(r.normal(0.0005,0.01,300))
+    p = {f"COH{i}": pd.Series(100*np.exp(base + np.cumsum(r.normal(0,0.003,300))), index=ix) for i in range(3)}
+    p["INDEP"] = pd.Series(100*np.exp(np.cumsum(r.normal(0,0.012,300))), index=ix)
+    pf = run_portfolio(list(p), p, rho_thresh=0.6)
+    assert pf["effective_bets"] <= 2 and pf["warning"] and pf["alloc_mult"]["COH0"] < 0.5
+    print(f"  portfolio guard: {pf['effective_bets']} bets / {pf['n_longs']} longs | mult={pf['alloc_mult']['COH0']} | {pf['warning'][:46]}…  OK")
+def t_rotation_portfolio_e2e():
+    r = np.random.default_rng(21); n = 400; lag = 10
+    rL = r.normal(0, 0.012, n); rL[-6] = 0.09                          # leader fires ~6 bars ago
+    leadpx = S(100*np.exp(np.cumsum(rL)))
+    rF = np.zeros(n); rF[lag:] = 0.7*rL[:-lag] + r.normal(0, 0.008, n-lag)   # follower lags leader by `lag`
+    follpx = S(100*np.exp(np.cumsum(rF)))
+    vol = S(r.normal(1e6, 1e5, n))
+    out = run_gcfis({"LEADER":leadpx,"FOLLOWER":follpx}, bench, {"risk_on":0.7,"chop":0.3},
+                    leadlag_pairs=[("LEADER","FOLLOWER")], leadlag_cfg={"granger_lags":12}, volumes={"LEADER":vol,"FOLLOWER":vol})
+    assert "FOLLOWER" in out["rotation"], f"leadlag→rotation should prime FOLLOWER: {out['rotation']}"
+    assert out["rotation"]["FOLLOWER"]["leader"] == "LEADER"
+    assert "portfolio" in out["ranking"] and out["ranking"]["portfolio"]["ok"]
+    print(f"  LX→selection e2e: leadlag discovered LEADER→FOLLOWER, rotation primed FOLLOWER "
+          f"(window {out['rotation']['FOLLOWER']['window']}d) | portfolio bets={out['ranking']['portfolio']['effective_bets']}  OK")
+
 if __name__ == "__main__":
-    print("GCFIS full suite (13 layers + B5 + entry + cross-asset + product-confluence + full-contract)"); print("-"*72)
+    print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio)"); print("-"*78)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
-               t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e):
+               t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e):
         fn()
-    print("-"*72); print("ALL TESTS PASSED")
+    print("-"*78); print("ALL TESTS PASSED")
