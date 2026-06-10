@@ -52,6 +52,10 @@ def card_html(r: dict, deferred: bool = False) -> str:
                    + _chip("γflip", opt.get("gamma_flip"), "#a371f7")
                    + _chip("call_wall", opt.get("call_wall"), "#a371f7") + _chip("put_wall", opt.get("put_wall"), "#a371f7")
                    + _chip("vanna", opt.get("vanna"), "#a371f7") + _chip("charm", opt.get("charm"), "#a371f7"))
+    elif opt.get("gex") is not None:
+        options = (_chip("GEX·proxy", ("+" if opt.get("gex_sign", 0) >= 0 else "") + str(opt.get("gex")), "#8a63d2")
+                   + _chip("γflip·proxy", opt.get("gamma_flip"), "#8a63d2")
+                   + _chip("call_wall", opt.get("call_wall"), "#8a63d2") + _chip("put_wall", opt.get("put_wall"), "#8a63d2"))
     else:
         options = _chip("options", "no real chain (n/a)", "#57606a")
     macro = (_chip("Quad", (mac.get("quad") or "—"), "#d29922") + _chip("Liq", mac.get("liquidity_regime"), "#d29922")

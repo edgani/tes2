@@ -8,7 +8,7 @@ from .engines.forward_macro import run_forward_macro
 from .engines.liquidity import run_liquidity
 from .engines.flow import run_flow
 from .engines.theme import run_theme
-from .engines.bottleneck_engine import run_bottleneck
+from .engines.bottleneck_engine import run_bottleneck, run_bottleneck_migration
 from .engines.crypto import run_crypto
 from .engines.accumulation import run_accumulation
 from .engines.positioning import run_positioning
@@ -37,7 +37,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
               ticker_node_map=None, subthemes=None,
               earnings_rev_by_ticker=None, inst_own_by_ticker=None, etf_flow_by_ticker=None,
               options_oi_by_ticker=None, social_by_ticker=None, short_int_by_ticker=None, lev_etf_set=None,
-              leadlag_cfg=None):
+              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None):
     si = systemic_inputs or {}
     # --- SYSTEMIC / CONTEXT (L1-L6, L10) ---
     frag = run_fragility(si, returns_matrix, index_returns)
@@ -47,6 +47,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     flow = run_flow(prices, bench, etf_flows)
     theme = run_theme(theme_baskets or {}, prices, bench) if theme_baskets else {"ok": False, "themes": {}}
     bott = run_bottleneck(bottleneck_nodes) if bottleneck_nodes else {"ok": False}
+    bott_mig = run_bottleneck_migration(bottleneck_node_history) if bottleneck_node_history else {"ok": False}
     crypto = run_crypto(crypto_inputs) if crypto_inputs else {"ok": False}
     cross = run_cross_asset(cross_asset_snapshot) if cross_asset_snapshot else {"ok": False, "regime": None, "defer_longs": False, "divergences": []}
     liq_score = liq.get("liquidity_regime", 50.0)
@@ -68,7 +69,12 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                              short_int=(short_int_by_ticker or {}).get(tkr),
                              lev_etf_exists=(tkr in (lev_etf_set or set())))
         pos = run_positioning(tkr, **(cot_by_ticker.get(tkr, {}) if cot_by_ticker else {}))
-        d = run_dealer((options_chains or {}).get(tkr), spot=float(px.iloc[-1])) if options_chains else {"ok": False, "gex_sign": 0, "regime": "unknown"}
+        if dealer_by_ticker and tkr in dealer_by_ticker:
+            d = dealer_by_ticker[tkr]                      # use v40's already-computed GEX/walls (flagged real vs proxy)
+        elif options_chains:
+            d = run_dealer((options_chains or {}).get(tkr), spot=float(px.iloc[-1]))
+        else:
+            d = {"ok": False, "gex_sign": 0, "regime": "unknown"}
         refl = run_reflexivity(px, volume=(volumes or {}).get(tkr))
         dealers[tkr] = d
         th = _ticker_theme(tkr, theme_baskets)
@@ -164,7 +170,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         r["alloc_mult"] = pf.get("alloc_mult", {}).get(r["ticker"], 1.0)
     return {"ok": True,
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
-                         "flow": flow, "theme": theme, "bottleneck": bott, "crypto": crypto, "cross_asset": cross},
+                         "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],
                         "master_long": longs, "master_short": shorts, "master_spot": spots,
                         "deferred_longs": deferred, "portfolio": pf},

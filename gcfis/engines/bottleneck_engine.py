@@ -24,3 +24,21 @@ def run_bottleneck(nodes: dict, chain_edges: list | None = None) -> dict:
     rank = sorted(scored.items(), key=lambda kv: kv[1], reverse=True)
     return {"ok": True, "scores": scored, "ticker_node": tmap,
             "tightest_bottleneck": rank[0][0] if rank else None, "ranked": [n for n, _ in rank]}
+
+
+def run_bottleneck_migration(node_history: dict, lookback: int = 21) -> dict:
+    """node_history: {node: pd.Series of bottleneck scores over time}. Ranks nodes by Δ(tightness)
+    over `lookback` → surfaces the MIGRATING/emerging winner (where tightness is rising fastest)
+    vs the fading one. The supply-chain winner rotates (GPU→cooling→power→grid); this tracks it."""
+    import pandas as pd
+    vel = {}
+    for node, s in (node_history or {}).items():
+        ss = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(ss) < lookback + 1:
+            continue
+        vel[node] = float(ss.iloc[-1] - ss.iloc[-1 - lookback])
+    if not vel:
+        return {"ok": False, "reason": "need node score history (>=lookback+1 points)"}
+    rank = sorted(vel.items(), key=lambda kv: kv[1], reverse=True)
+    return {"ok": True, "migration_velocity": {k: round(v, 3) for k, v in vel.items()},
+            "emerging": rank[0][0], "fading": rank[-1][0], "ranked": [n for n, _ in rank]}

@@ -10,8 +10,8 @@ that are implementable + validatable now; the other two need real data and are s
 | # | Gap | Status |
 |---|-----|--------|
 | 1 | **Lead-lag graph was decorative.** `leadlag_discovery` was computed but only *reported* — it never drove selection, despite being the specced "moat" (rotation-prediction). | ✅ **FIXED (s52)** |
-| 2 | **Regime posterior is a quad→lookup, not a fitted HMM.** C1 keystone weighting is only as good as the quad map. | ⏳ deferred — needs real feature matrix + fitting (synthetic HMM = theater) |
-| 3 | **Bottleneck has no migration tracking.** Static node score; doesn't track the migrating winner (GPU→cooling→power→grid). | ⏳ deferred — needs node tightness time-series |
+| 2 | **Regime posterior is a quad→lookup, not a fitted HMM.** | ✅ **FIXED (s53)** — real Gaussian HMM (`regime_hmm.py`, hmmlearn, runtime-fit on bench/breadth/VIX, graceful fallback) |
+| 3 | **Bottleneck has no migration tracking.** | ✅ **FIXED (s53)** — `run_bottleneck_migration` ranks nodes by Δtightness → emerging/fading; wired into orchestrator output |
 | 4 | **No portfolio-level construction.** Top-N longs could be one correlated bet, sized as N. | ✅ **FIXED (s52)** |
 
 ## What was built
@@ -33,7 +33,14 @@ that are implementable + validatable now; the other two need real data and are s
   **alloc multiplier** (1/cluster_size) so a correlated cluster isn't oversized.
 - Surfaces in the dashboard as a portfolio warning + per-card `size×` factor.
 
-## What is deferred (and why — not faked)
+## Visibility fix (s53) — why it 'felt like nothing changed'
+The GCFIS work lived in a parallel package + one side tab whose adapter fed only PRICES, so every
+advanced panel showed `n/a` and the existing tabs were untouched. s53 fixes that: the adapter now
+harvests the data v40 already computes (volumes, breadth, VIX, GEX/walls, quads) and fits a real HMM
+regime at runtime → the 🧭 tab populates; and a compact GCFIS confluence section is folded into Alpha
+Center (guarded). v40's GEX is proxy → shown labelled `GEX·proxy`, never laundered as a real chain.
+
+## (historical) what was deferred — now done
 - **#2 real HMM regime:** the State Layer should be a Gaussian HMM fitted on the daily feature vector
   (forward-growth, NetLiq Δ, credit-z, vol-z, breadth-z, x-asset-corr). Fitting on synthetic data
   proves nothing; this needs your real feeds. The hook (`regime_posterior`) is already the seam — swap

@@ -24,3 +24,4 @@ zstandard>=0.21
 # ── AI Engine (Gemini) ──
 google-generativeai>=0.8.0
 # flashalpha  # optional: free real GEX (5/day), needs FLASHALPHA_KEY env — uncomment if pkg available
+hmmlearn>=0.3.0

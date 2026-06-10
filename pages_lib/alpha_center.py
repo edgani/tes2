@@ -189,6 +189,13 @@ def render(snap: dict):
                "bottleneck/monopoly/M&A yang bisa **3x–50x** kalau theses-nya jalan. "
                "Asymmetric: downside terbatas, upside gila. Ride the wave, jangan scalp.")
 
+    # ── GCFIS confluence layer (additive; guarded — cannot break Alpha Center) ──
+    try:
+        from pages_lib._gcfis_inline import render_gcfis_section
+        render_gcfis_section(snap, st)
+    except Exception:
+        pass
+
     try:
         from engines.alpha_center_curator import get_curator
         curator = get_curator()
