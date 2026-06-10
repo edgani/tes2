@@ -1,24 +1,31 @@
-# Quad calc + ticker filter — verification
+# Quad calc + ticker filter + ticker presentation — verification
 
 ## Quad (engines/forward_macro.py) — Hedgeye GIP, CORRECT
-Market-implied growth/inflation composites, classified by RATE-OF-CHANGE (2nd-derivative), not level:
-| GROC | IROC | Quad |
-|---|---|---|
-| ≥0 | <0 | **Q1 Goldilocks** (growth↑ inflation↓) |
-| ≥0 | ≥0 | **Q2 Reflation** (growth↑ inflation↑) |
-| <0 | ≥0 | **Q3 Stagflation** (growth↓ inflation↑) |
-| <0 | <0 | **Q4 Deflation** (growth↓ inflation↓) |
-Matches Hedgeye's 2×2 exactly. Verified in `test_all.py::t_l2` (g↑/i↓ → Q1).
-Default factor weights are PRIORS; `fit_ridge()` re-fits on real next-period growth on your machine.
+Market-implied growth/inflation composites, classified by RATE-OF-CHANGE (2nd-derivative):
+GROC≥0&IROC<0→**Q1 Goldilocks** · ≥0&≥0→**Q2 Reflation** · <0&≥0→**Q3 Stagflation** · <0&<0→**Q4 Deflation**.
+Verified in `test_all.py::t_l2`. Default weights are PRIORS; `fit_ridge()` re-fits on real next-period growth.
 
-## Ticker filter (meta/regime_meta.py) — multi-condition, CORRECT
-A ticker reaches **master_long** only if ALL hold:
-1. confluence `0.45·accumulation + 0.35·theme + 0.20·smart-money` clears bull threshold (≥55)
-2. regime tilt supports longs (`W_long` from HMM posterior), scaled down by systemic stress
-3. NOT distributing (no exit_signal / broker NET_DISTRIBUTION / COT-extreme-long)
-4. passes capacity (ADV ≥ min_adv) — illiquid → STAND_ASIDE
-5. NOT cross-asset deferred (DELEVERAGING/DEFLATION_SCARE → moved to deferred_longs)
+## Ticker FILTER (meta/regime_meta.py) — PRODUCT confluence (matches GCFIS spec)
+Offensive score = **geometric mean** of the AVAILABLE offensive sub-scores (each ∈[0,1]):
+`Theme × Bottleneck × Accumulation × Adoption-sweet-spot × Reflexivity`.
+- AND-logic: a present-but-weak layer drags the score down (confluence required).
+- Absent-data layers are EXCLUDED (not zeroed) — no penalty for data you don't have (honest).
+- **Bottleneck now reaches the ticker**: `bottleneck_engine` emits a node→ticker map, each ticker
+  inherits its supply-chain node's score (NVDA→GPU). Verified `t_bottleneck_map` + `t_full_contract_e2e`.
+- **Reflexivity (B5)**: runaway loop detector (price×flow co-acceleration) feeds confluence. `t_reflexivity`.
+A ticker reaches **master_long** only if: confluence·regime-tilt·(1−stress) ≥ 55, NOT distributing,
+passes capacity (ADV), NOT cross-asset-deferred. **master_short** = distribution score
+(exit_signal / crowded-rolling-over[crowd>85 & vel<0] / broker NET_DISTRIBUTION / COT-extreme).
+Counter-regime: bullish quad + distribution → demote long / flip short.
 
-Counter-regime: bullish quad + distribution → demote long, flip short.
-**master_short**: bear confluence OR stress-driven. **master_spot**: uncrowded Stage 2→3 sweet-spot.
-Every row carries a `reason` string (narrative.py) — no recommendation without a logical why.
+## Ticker PRESENTATION (core/contracts.py + dashboard.card_html) — full GCFIS output contract
+Each ticker carries the COMPLETE contract, rendered as a multi-panel card (not a one-liner):
+- **Identity**: ticker, theme, subtheme
+- **Scores**: meta, accumulation, theme, bottleneck, reflexivity, **liquidity, dealer, positioning**, confluence
+- **Institutional**: adoption_stage, crowding, adoption_velocity, **revision, ownership_Δ, etf_flow** (surface when data supplied; also feed accumulation crowding)
+- **Options** (real chain only, else "n/a" — never fabricated): call_wall, put_wall, GEX, gex_sign, **gamma, gamma_flip, vanna, charm**, is_real
+- **Macro** (stamped per ticker): quad, liquidity_regime, fragility, shock_prob, cross_asset_regime
+- **Entry**: type, gamma_regime, entry_px, stop, target, RR
+- **Opportunity**: bear / base / bull / supercycle (vol-scaled price fan)
+- **Conviction** + reason
+Verified end-to-end in `test_all.py::t_full_contract_e2e` (asserts every panel populated + card renders all).

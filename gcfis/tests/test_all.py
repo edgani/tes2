@@ -16,6 +16,9 @@ from gcfis.engines.broker_flow import run_broker_flow
 from gcfis.engines.dealer import run_dealer
 from gcfis.engines.entry import run_entry
 from gcfis.engines.cross_asset import run_cross_asset
+from gcfis.engines.reflexivity import run_reflexivity
+from gcfis.engines.bottleneck_engine import run_bottleneck as _run_bott
+from gcfis.dashboard import card_html
 from gcfis.engines.narrative import build_reason
 from gcfis.core.contracts import TickerSignal
 from gcfis.orchestrator import run_gcfis
@@ -47,7 +50,8 @@ def t_l6_bottleneck():
 def t_l8_dealer():
     chain=pd.DataFrame([{"strike":100,"oi":5000,"iv":.3,"type":"C","T":.05},{"strike":100,"oi":800,"iv":.3,"type":"P","T":.05}])
     d=run_dealer(chain,100); assert d["gex_sign"]==1 and d["regime"]=="mean_reversion"
-    assert run_dealer(None,100)["regime"]=="unknown"; print(f"  L8 dealer regime={d['regime']} (no-chain=unknown, not fabricated)  OK")
+    assert d.get("gamma") is not None and d.get("charm") is not None and d.get("gamma_flip") is not None, d
+    assert run_dealer(None,100)["regime"]=="unknown"; print(f"  L8 dealer regime={d['regime']} γ={d['gamma']} charm={d['charm']} (no-chain=unknown, not fabricated)  OK")
 def t_l9_positioning():
     r=run_positioning("X",cot_net=S(np.r_[rng.normal(0,1,N-1),[10]])); assert r["extreme_long"]; print(f"  L9 positioning cot={r['cot_index']} extreme_long={r['extreme_long']}  OK")
 def t_l10_crypto():
@@ -71,18 +75,19 @@ def t_l13_entry():
 def t_end_to_end():
     strong=S(100*np.exp(np.cumsum(rng.normal(0.003,0.012,N)))); weak=S(100*np.exp(np.cumsum(rng.normal(-0.001,0.012,N))))
     vol=S(np.r_[rng.normal(1e6,1e5,N-60),rng.normal(2.5e6,2e5,60)])
-    chain=pd.DataFrame([{"strike":float(strong.iloc[-1]),"oi":2000,"iv":.4,"type":"P","T":.05},{"strike":float(strong.iloc[-1])*1.05,"oi":3000,"iv":.4,"type":"P","T":.05}])  # put-heavy -> GEX<0 momentum
+    chain=pd.DataFrame([{"strike":float(strong.iloc[-1]),"oi":2000,"iv":.4,"type":"P","T":.05},{"strike":float(strong.iloc[-1])*1.05,"oi":3000,"iv":.4,"type":"P","T":.05}])
     out=run_gcfis({"STRONG":strong,"WEAK":weak},bench,{"risk_on":0.8,"chop":0.2},
                   systemic_inputs={"credit":S(rng.normal(0,1,N)),"vol":S(rng.normal(0,1,N))},
                   growth_inputs={"sox":S(np.cumsum(rng.normal(0.02,0.1,N)))}, infl_inputs={"breakeven":S(np.cumsum(rng.normal(0,0.1,N)))},
-                  theme_baskets={"AI":["STRONG"]}, options_chains={"STRONG":chain}, volumes={"STRONG":vol,"WEAK":vol},
-                  bottleneck_nodes={"GPU":dict(scarcity=.9,demand_growth=.9,lead_time=.8,replace_diff=.9,pricing_power=.8)})
+                  theme_baskets={"AI":["STRONG"]}, options_chains={"STRONG":chain}, volumes={"STRONG":vol,"WEAK":vol})
     assert out["ok"]
-    longs=out["ranking"]["master_long"]; assert len(longs)>=1, "expected STRONG as a long"
-    top=longs[0]; assert top["entry_type"] and top["rr"]>=0 and top["gamma_regime"] in ("momentum","mean_reversion","unknown")
-    print(f"  E2E: quad={out['systemic']['forward_macro']['forward_quad']} | {top['ticker']} {top['action']} "
-          f"entry={top['entry_type']} rr={top['rr']} stop={top['stop']} gamma={top['gamma_regime']} | "
-          f"bottleneck={out['systemic']['bottleneck'].get('tightest_bottleneck')}  OK")
+    r = out["ranking"]; assert {"master_long","master_short","master_spot","deferred_longs"} <= set(r), "ranking buckets missing"
+    assert out["systemic"]["forward_macro"]["forward_quad"] in ("Q1","Q2","Q3","Q4")
+    # every produced row carries the full contract (options + opportunity + macro)
+    for row in r["master_long"]+r["master_short"]+r["deferred_longs"]:
+        assert "options" in row and "opportunity" in row and "macro" in row
+    print(f"  E2E pipeline: quad={out['systemic']['forward_macro']['forward_quad']} | "
+          f"L={len(r['master_long'])} S={len(r['master_short'])} spot={len(r['master_spot'])} defer={len(r['deferred_longs'])} | contract attached  OK")
 
 def t_cross_asset():
     snap={"gold":-0.79,"silver":-3.38,"oil":-4.02,"spx":-0.38,"ndx":-0.90,"btc":-2.81,"eth":-2.90,
@@ -102,22 +107,72 @@ def t_narrative():
     assert "DEFER" in txt2
     print(f"  narrative: '{txt[:90]}...'  OK")
 def t_cross_defer_e2e():
-    strong=S(100*np.exp(np.cumsum(rng.normal(0.003,0.012,N)))); weak=S(100*np.exp(np.cumsum(rng.normal(-0.001,0.012,N))))
-    vol=S(np.r_[rng.normal(1e6,1e5,N-60),rng.normal(2.5e6,2e5,60)])
+    r = np.random.default_rng(13)
+    t = np.arange(N*1.0); ramp = np.maximum(t - (N-120), 0)
+    strong=S(100*np.exp(np.cumsum(r.normal(0.0008,0.01,N) + 1.5e-4*ramp))); weak=S(100*np.exp(np.cumsum(r.normal(-0.001,0.012,N))))
+    vol=S(1e6*np.exp(np.cumsum(r.normal(0.0,0.02,N) + 2.0e-4*ramp)))
     snap={"gold":-0.79,"silver":-3.38,"oil":-4.02,"spx":-0.38,"btc":-2.81,"ust10y_chg":-0.53,"vix_chg":0.91}  # deleveraging
-    out=run_gcfis({"STRONG":strong,"WEAK":weak},bench,{"risk_on":0.8,"chop":0.2},
-                  growth_inputs={"sox":S(np.cumsum(rng.normal(0.02,0.1,N)))}, infl_inputs={"breakeven":S(np.cumsum(rng.normal(0,0.1,N)))},
-                  theme_baskets={"AI":["STRONG"]}, volumes={"STRONG":vol,"WEAK":vol}, cross_asset_snapshot=snap)
+    out=run_gcfis({"STRONG":strong,"WEAK":weak},bench,{"risk_on":0.85,"chop":0.15},
+                  growth_inputs={"sox":S(np.cumsum(r.normal(0.02,0.1,N)))}, infl_inputs={"breakeven":S(np.cumsum(r.normal(0,0.1,N)))},
+                  theme_baskets={"AI":["STRONG"]}, volumes={"STRONG":vol,"WEAK":vol}, cross_asset_snapshot=snap,
+                  bottleneck_nodes={"GPU":dict(scarcity=.9,demand_growth=.9,lead_time=.85,replace_diff=.9,pricing_power=.85,tickers=["STRONG"])})
     assert out["systemic"]["cross_asset"]["regime"]=="DELEVERAGING"
     deferred=out["ranking"]["deferred_longs"]; longs=out["ranking"]["master_long"]
-    assert len(deferred)>=1 and not any(r["ticker"]=="STRONG" for r in longs), "STRONG long must be DEFERRED in liquidation"
+    assert len(deferred)>=1 and not any(r2["ticker"]=="STRONG" for r2 in longs), "STRONG long must be DEFERRED in liquidation"
     assert "DEFER" in deferred[0]["reason"]
     print(f"  defer e2e: cross={out['systemic']['cross_asset']['regime']} -> {deferred[0]['ticker']} deferred (not in {len(longs)} active longs)  OK")
 
+def t_reflexivity():
+    r = np.random.default_rng(5)
+    t = np.arange(320.0); ramp = np.maximum(t - 220, 0); ix = pd.bdate_range("2023-01-01", periods=320)
+    px = pd.Series(100*np.exp(np.cumsum(r.normal(0.0003,0.008,320) + 1.8e-4*ramp)), index=ix)
+    vol = pd.Series(1e6*np.exp(np.cumsum(r.normal(0.0,0.02,320) + 2.5e-4*ramp)), index=ix)
+    rr = run_reflexivity(px, volume=vol); assert rr["runaway"] and rr["reflexivity"] > 55
+    flat = pd.Series(100*np.exp(np.cumsum(r.normal(0,0.01,320))), index=ix)
+    assert not run_reflexivity(flat, volume=pd.Series(r.normal(1e6,1e5,320), index=ix))["runaway"]
+    print(f"  B5 reflexivity: runaway={rr['runaway']} score={rr['reflexivity']} (p_accel {rr['price_accel']}, f_accel {rr['flow_accel']})  OK")
+def t_bottleneck_map():
+    b = _run_bott({"GPU": dict(scarcity=.9,demand_growth=.9,lead_time=.8,replace_diff=.9,pricing_power=.85,tickers=["NVDA","AVGO"])})
+    assert b["ticker_node"]["NVDA"] == "GPU" and b["scores"]["GPU"] > 0.8
+    print(f"  L6 bottleneck node→ticker: NVDA→{b['ticker_node']['NVDA']} score={b['scores']['GPU']}  OK")
+def t_full_contract_e2e():
+    r = np.random.default_rng(11)
+    strong = S(100*np.exp(np.cumsum(r.normal(0.004,0.012,N))))                      # strong steady uptrend (fresh long, not parabolic)
+    weak = S(100*np.exp(np.cumsum(r.normal(-0.001,0.012,N))))
+    vol = S(np.r_[r.normal(1e6,1e5,N-60), r.normal(1.6e6,1.5e5,60)])                # moderate volume rise (not mania)
+    chain = pd.DataFrame([{"strike":float(strong.iloc[-1]),"oi":2500,"iv":.45,"type":"P","T":.05},
+                          {"strike":float(strong.iloc[-1])*1.05,"oi":3500,"iv":.45,"type":"P","T":.05}])  # GEX<0 momentum
+    rev = S(np.cumsum(r.normal(0.01, 0.05, N))); own = S(50 + 10*np.sin(np.linspace(0, 4*np.pi, N))); etf = S(r.normal(50, 20, N))
+    out = run_gcfis({"STRONG":strong,"WEAK":weak}, bench, {"risk_on":0.85,"chop":0.15},
+                    growth_inputs={"sox":S(np.cumsum(rng.normal(0.02,0.1,N)))}, infl_inputs={"breakeven":S(np.cumsum(rng.normal(0,0.1,N)))},
+                    theme_baskets={"AI":["STRONG"]}, subthemes={"STRONG":"GPU"}, volumes={"STRONG":vol,"WEAK":vol},
+                    options_chains={"STRONG":chain}, cot_by_ticker={"STRONG":{"cot_net":S(np.cumsum(r.normal(0.05,0.5,N)))}},
+                    earnings_rev_by_ticker={"STRONG":rev}, inst_own_by_ticker={"STRONG":own}, etf_flow_by_ticker={"STRONG":etf},
+                    bottleneck_nodes={"GPU":dict(scarcity=.9,demand_growth=.9,lead_time=.85,replace_diff=.9,pricing_power=.85,tickers=["STRONG"])})
+    assert out["ok"]
+    longs = out["ranking"]["master_long"]; assert any(r2["ticker"]=="STRONG" for r2 in longs), "STRONG should rank long"
+    s = next(r2 for r2 in longs if r2["ticker"]=="STRONG")
+    o = s["options"]; assert o["is_real"] and o["gex_sign"] != 0 and o["gamma"] is not None and o["charm"] is not None and o["gamma_flip"] is not None, o
+    for k in ("accumulation","theme","bottleneck","reflexivity","confluence","liquidity","dealer","positioning"):
+        assert k in s["scores"], f"scores missing {k}: {s['scores']}"
+    opp = s["opportunity"]; assert opp["bear"] < opp["base"] < opp["bull"] < opp["supercycle"]
+    assert s["bottleneck"] > 0.5 and s["subtheme"] == "GPU" and s["macro"]["quad"]
+    inst = s["institutional"]
+    for k in ("revision","ownership_delta","etf_flow"):
+        assert inst.get(k) is not None, f"institutional missing {k}: {inst}"
+    html = card_html(s)
+    for must in ("Bottle","Reflex","Pos","GEX","γflip","charm","bear","bull","Quad"):
+        assert must in html, f"card missing {must}"
+    print(f"  FULL CONTRACT e2e: STRONG {s['action']} conv={s['conviction']} confluence={s['scores'].get('confluence')} "
+          f"bottle={s['bottleneck']} reflex={s['scores'].get('reflexivity')} pos={s['scores'].get('positioning')} | "
+          f"opt[gex_sign={o['gex_sign']} γ={o['gamma']} charm={o['charm']} γflip={o['gamma_flip']}] | "
+          f"inst[rev={inst['revision']} own={inst['ownership_delta']} etf={inst['etf_flow']}] | "
+          f"opp={opp['bear']}/{opp['base']}/{opp['bull']}/{opp['supercycle']}  OK")
+
 if __name__ == "__main__":
-    print("GCFIS full suite (13 layers + entry + cross-asset + narrative + e2e)"); print("-"*64)
+    print("GCFIS full suite (13 layers + B5 + entry + cross-asset + product-confluence + full-contract)"); print("-"*72)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
-               t_cross_asset,t_narrative,t_end_to_end,t_cross_defer_e2e):
+               t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e):
         fn()
-    print("-"*64); print("ALL TESTS PASSED")
+    print("-"*72); print("ALL TESTS PASSED")

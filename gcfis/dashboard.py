@@ -1,22 +1,20 @@
-"""dashboard.py — GCFIS render layer. ONE reusable renderer you call from ANY tab (Market, Alpha
-Center, etc.). Pure-logic helpers (badges/formatting) are streamlit-free so they're unit-tested.
-Aesthetic: dark, minimal, horizontal dividers (no heavy boxes)."""
+"""dashboard.py — GCFIS render layer. ONE reusable renderer callable from ANY tab.
+Renders the FULL per-ticker output contract as a multi-panel card (Identity/Scores/Options/
+Macro/Risk/Opportunity/Entry). Pure-logic helpers are streamlit-free (unit-tested)."""
 from __future__ import annotations
 
 # ---------- pure logic (testable without streamlit) ----------
 def alpha_badge(row: dict, deferred: bool = False) -> tuple[str, str]:
-    """Map a GCFIS signal to an Alpha-Center-style verdict badge -> (label, hex)."""
-    act, valid, direction = row.get("action"), row.get("entry_valid"), row.get("direction")
-    if deferred:                                   return ("⏸ DEFER (liquidation)", "#b08900")
-    if act == "BUILD_LONG" and valid:              return ("✅ ALPHA-READY", "#1a7f37")
-    if act == "BUILD_LONG" and not valid:          return ("🟡 READY · WAIT ENTRY", "#b08900")
-    if act == "BUILD_SHORT":                       return ("🔻 SHORT", "#cf222e")
-    if act == "START_SCALING":                     return ("🔶 WARMING", "#bc4c00")
+    act, valid = row.get("action"), row.get("entry_valid")
+    if deferred:                          return ("⏸ DEFER (liquidation)", "#b08900")
+    if act == "BUILD_LONG" and valid:     return ("✅ ALPHA-READY", "#1a7f37")
+    if act == "BUILD_LONG" and not valid: return ("🟡 READY · WAIT ENTRY", "#b08900")
+    if act == "BUILD_SHORT":              return ("🔻 SHORT", "#cf222e")
+    if act == "START_SCALING":            return ("🔶 WARMING", "#bc4c00")
     return ("👁 WATCH", "#57606a")
 
 def format_entry(row: dict) -> str:
-    if not row.get("entry_type"):
-        return "—"
+    if not row.get("entry_type"): return "—"
     return (f"{row['entry_type']} · γ={row.get('gamma_regime','?')} · "
             f"in {row.get('entry_px','?')} / stop {row.get('stop','?')} / tgt {row.get('target','?')} · "
             f"R/R {row.get('rr','?')}")
@@ -27,6 +25,47 @@ def regime_color(regime: str | None) -> str:
 
 def quad_label(q: str | None) -> str:
     return {"Q1": "Q1 Goldilocks", "Q2": "Q2 Reflation", "Q3": "Q3 Stagflation", "Q4": "Q4 Deflation"}.get(q or "", "Quad —")
+
+def _chip(label, value, color="#8b949e"):
+    if value is None or value == "": return ""
+    return (f"<span style='display:inline-block;margin:1px 6px 1px 0;font-size:.72rem;color:#c9d1d9'>"
+            f"<span style='color:{color}'>{label}</span> {value}</span>")
+
+def card_html(r: dict, deferred: bool = False) -> str:
+    """Full per-ticker contract card (pure string; no streamlit)."""
+    label, col = alpha_badge(r, deferred=deferred)
+    sc = r.get("scores", {}); opt = r.get("options", {}); mac = r.get("macro", {}); opp = r.get("opportunity", {})
+    head = (f"<b style='font-size:1rem'>{r['ticker']}</b>"
+            f"{' · ' + r['theme'] if r.get('theme') else ''}"
+            f"{'/' + r['subtheme'] if r.get('subtheme') else ''} "
+            f"<span style='color:{col}'>{label}</span>"
+            f"<span style='float:right;color:#8b949e'>conv {r.get('conviction','?')} · meta {r.get('meta_score','?')}</span>")
+    scores = (_chip("Acc", sc.get("accumulation"), "#58a6ff") + _chip("Theme", sc.get("theme"), "#58a6ff")
+              + _chip("Bottle", sc.get("bottleneck"), "#58a6ff") + _chip("Reflex", sc.get("reflexivity"), "#58a6ff")
+              + _chip("Pos", sc.get("positioning"), "#58a6ff")
+              + (_chip("⚡runaway", "yes", "#bc4c00") if r.get("runaway") else "")
+              + _chip("conflu", sc.get("confluence"), "#3fb950"))
+    if opt.get("is_real"):
+        options = (_chip("GEX", ("+" if opt.get("gex_sign", 0) >= 0 else "") + str(opt.get("gex")), "#a371f7")
+                   + _chip("γflip", opt.get("gamma_flip"), "#a371f7")
+                   + _chip("call_wall", opt.get("call_wall"), "#a371f7") + _chip("put_wall", opt.get("put_wall"), "#a371f7")
+                   + _chip("vanna", opt.get("vanna"), "#a371f7") + _chip("charm", opt.get("charm"), "#a371f7"))
+    else:
+        options = _chip("options", "no real chain (n/a)", "#57606a")
+    macro = (_chip("Quad", (mac.get("quad") or "—"), "#d29922") + _chip("Liq", mac.get("liquidity_regime"), "#d29922")
+             + _chip("Frag", mac.get("fragility"), "#d29922") + _chip("Shock", mac.get("shock_prob"), "#d29922")
+             + _chip("X-asset", mac.get("cross_asset_regime"), "#d29922"))
+    entry = _chip("Entry", format_entry(r), "#3fb950")
+    scen = (_chip("bear", opp.get("bear"), "#cf222e") + _chip("base", opp.get("base"), "#8b949e")
+            + _chip("bull", opp.get("bull"), "#1a7f37") + _chip("super", opp.get("supercycle"), "#1a7f37"))
+    return (f"<div style='border-left:3px solid {col};padding:.45rem .7rem;margin:.35rem 0;background:#0f1117'>"
+            f"<div>{head}</div>"
+            f"<div style='margin-top:3px'>{scores}</div>"
+            f"<div>{options}</div>"
+            f"<div>{macro}</div>"
+            f"<div style='margin-top:2px'>{entry}</div>"
+            f"<div>📈 {scen}</div>"
+            f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div></div>")
 
 # ---------- streamlit render ----------
 def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
@@ -46,33 +85,24 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
     c[2].metric("Fragility", frag.get("fragility", "—"))
     c[3].metric("Shock P", shock.get("shock_prob", "—"))
     c[4].metric("Liquidity", liq.get("liquidity_regime", "—"))
-
     if cross.get("ok"):
         st.caption(f"📡 {cross.get('why','')}")
         for d in cross.get("divergences", []):
             st.warning(d)
     st.divider()
 
-    def _table(rows, header, empty):
+    def _section(rows, header, empty, deferred=False):
         st.markdown(f"#### {header}  ·  {len(rows)}")
         if not rows:
             st.caption(empty); return
-        deferred_set = header.startswith("⏸")
         for r in rows:
-            label, col = alpha_badge(r, deferred=deferred_set)
-            st.markdown(
-                f"<div style='border-left:3px solid {col};padding:.3rem .6rem;margin:.25rem 0'>"
-                f"<b>{r['ticker']}</b> <span style='color:{col}'>{label}</span> "
-                f"<span style='float:right;color:#8b949e'>conv {r.get('conviction','?')}</span><br>"
-                f"<span style='color:#c9d1d9;font-size:.85rem'>{r.get('reason','')}</span></div>",
-                unsafe_allow_html=True)
+            st.markdown(card_html(r, deferred=deferred), unsafe_allow_html=True)
 
-    _table(rank.get("master_long", []), "🟢 LONG", "No qualified longs this regime.")
-    _table(rank.get("master_short", []), "🔴 SHORT", "No qualified shorts.")
-    _table(rank.get("master_spot", []), "💎 SPOT (uncrowded accumulation)", "No sweet-spot names.")
-    deferred = rank.get("deferred_longs", [])
-    if deferred:
-        _table(deferred, "⏸ DEFERRED LONGS (cross-asset gate)", "")
+    _section(rank.get("master_long", []), "🟢 LONG", "No qualified longs this regime.")
+    _section(rank.get("master_short", []), "🔴 SHORT", "No qualified shorts.")
+    _section(rank.get("master_spot", []), "💎 SPOT (uncrowded accumulation)", "No sweet-spot names.")
+    if rank.get("deferred_longs"):
+        _section(rank["deferred_longs"], "⏸ DEFERRED LONGS (cross-asset gate)", "", deferred=True)
 
     with st.expander("lead–lag (discovered)"):
         ll = out.get("leadlag", {})

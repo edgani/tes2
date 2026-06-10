@@ -83,11 +83,11 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s45 — WIRING 2 engine terakhir: (a) ALPHA-SCANNER routing verdict (🚀 ALPHA-READY / 👀 WARMING / 🌱 EARLY / 📋 WATCH / ↩️ NOT-ALPHA) sekarang muncul di tiap kartu Alpha Center = potential × readiness, non-alpha ditandain harusnya ke market tab. (b) ON-CHAIN panel di crypto (⛓️) pakai DeFiLlama TVL flow yang REAL (akumulasi/distribusi on-chain + TVL $); JUJUR: exchange netflow/whale/MVRV/SOPR/cornering butuh feed Glassnode/CryptoQuant — ditandai n/a, gak dikarang. Real-flow + greeks panel udah otomatis muncul di Alpha Center juga (lewat render bareng). Semua 7 engine self-test PASS.")
+    st.caption("v40 · build s51 — GCFIS layer (🧭 tab)")
     st.divider()
     
     page = st.radio("Navigation", [
-        "🏠 Dashboard", "⚡ Alpha Center",
+        "🏠 Dashboard", "⚡ Alpha Center", "🧭 GCFIS",
         "🇺🇸 US Stocks", "💱 Forex", "🛢️ Commodities",
         "₿ Crypto", "🇮🇩 IHSG",
         "📖 Themes", "📊 Portfolio Stress",
@@ -203,6 +203,9 @@ else:
         elif page == "⚡ Alpha Center":
             from pages_lib import alpha_center
             alpha_center.render(snap)
+        elif page == "🧭 GCFIS":
+            from pages_lib import gcfis_intel
+            gcfis_intel.render(snap)
         elif page == "🇺🇸 US Stocks":
             from pages_lib import us_stocks
             us_stocks.render(snap)

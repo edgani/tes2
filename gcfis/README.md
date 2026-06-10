@@ -59,3 +59,16 @@ when absent, never fabricate). Hard rule: **perm_p<0.05 AND DSR≥0.95, or NOISE
   systemic radar (quad / cross-asset / fragility / shock / liquidity) + master long/short/spot/deferred with
   Alpha-Center badges (✅ ALPHA-READY / 🟡 WAIT-ENTRY / 🔶 WARMING / 🔻 SHORT / 👁 WATCH / ⏸ DEFER) + reason + entry.
 - See `QUAD_AND_FILTER.md` for the verified quad mapping + ticker-filter conditions.
+
+---
+## v50 additions — closes the ticker filter + presentation gaps
+- **PRODUCT confluence** (`meta/regime_meta.py`): ranking = geometric mean of theme×bottleneck×
+  accumulation×adoption×reflexivity (AND-logic), replacing the additive 3-layer sum.
+- **Bottleneck node→ticker** (`bottleneck_engine.py`): tickers inherit their supply-chain node's
+  bottleneck score — bottleneck alpha finally reaches asset selection.
+- **Reflexivity engine (B5)** (`engines/reflexivity.py`): runaway-loop detector (price×flow
+  co-acceleration); `runaway` flag = monster-move signature.
+- **Full per-ticker output contract** (`core/contracts.py`): Options panel, Macro stamp, Risk,
+  **Opportunity scenarios (bear/base/bull/supercycle)**, Institutional, subtheme.
+- **Multi-panel card** (`dashboard.card_html`): renders the whole contract, not one line.
+- All in `tests/test_all.py` (19 tests incl. `t_reflexivity`, `t_bottleneck_map`, `t_full_contract_e2e`).
