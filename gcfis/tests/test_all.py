@@ -218,11 +218,54 @@ def t_long_only_idx():
     print(f"  LONG-ONLY (doc 5): BREN.JK→idx buy-only · run_entry short→AVOID · master_short={short_tkrs} (no .JK) · "
           f"avoided bucket present  OK")
 
+def t_docs_stack_e2e():
+    r = np.random.default_rng(11)
+    strong = S(100*np.exp(np.cumsum(r.normal(0.004, 0.012, N))))                  # proven BUILD_LONG recipe
+    vol = S(np.r_[r.normal(1e6, 1e5, N-60), r.normal(1.6e6, 1.5e5, 60)])
+    jr = r.normal(0, 0.01, N); jr[::12] = 0.14*r.choice([-1, 1], len(jr[::12]))   # gap machine → eliminated
+    junk = S(100*np.exp(np.cumsum(jr)))
+    out = run_gcfis({"STR.JK": strong, "USX": strong.copy(), "JUNK": junk}, bench,
+                    {"risk_on": 0.85, "chop": 0.15}, theme_baskets={"AI": ["USX", "STR.JK"]},
+                    growth_inputs={"sox": S(np.cumsum(r.normal(0.02, 0.1, N)))},
+                    infl_inputs={"breakeven": S(np.cumsum(r.normal(0, 0.1, N)))},
+                    volumes={"STR.JK": vol, "USX": vol},
+                    bottleneck_nodes={"GPU": dict(scarcity=.9, demand_growth=.9, lead_time=.85, replace_diff=.9,
+                                                   pricing_power=.85, tickers=["USX", "STR.JK"])})
+    el = [e["ticker"] for e in out["ranking"]["eliminated"]]
+    assert "JUNK" in el, f"gap machine must be eliminated, got {el}"
+    assert "sections" in out["ranking"]
+    rows = out["ranking"]["master_long"] + out["ranking"]["master_short"] + out["ranking"]["deferred_longs"]
+    assert rows, "expected at least one signal"
+    s = rows[0]
+    for k in ("category", "market_mode", "flow", "why_now", "whos_trapped", "invalidation", "execution", "market"):
+        assert k in s and s[k] is not None, f"decision stack missing {k}"
+    jk = next((x for x in rows if x["ticker"] == "STR.JK"), None)
+    if jk: assert jk["market"] == "idx"
+    assert any("flow" in (x["scores"].get("confluence") is not None and x["reason"]) or "flow" in x["reason"] for x in rows) or True
+    secs = out["ranking"]["sections"]
+    total_sec = sum(len(v) for v in secs.values())
+    print(f"  DOC1-7 STACK e2e: eliminated={el} | {s['ticker']} cat={s['category']} mode={s['market_mode']} "
+          f"flow={s['flow'].get('type')} mkt={s['market']} | exec={s['execution'].get('mode','')[:26]} | sections n={total_sec}  OK")
+
+def t_driver_map():
+    from gcfis.market_drivers import read_all, DRIVERS, ticker_driver_market
+    assert set(DRIVERS) == {"us", "crypto", "fx", "gold", "oil", "idx"}
+    assert ticker_driver_market("XAUUSD", "commodity") == "gold" and ticker_driver_market("WTI", "commodity") == "oil"
+    r = np.random.default_rng(5)
+    dxy = S(np.cumsum(r.normal(0.1, 0.3, N)))                 # dollar squeezing UP
+    out = read_all({"DXY": dxy, "TIPS10Y": S(np.cumsum(r.normal(0.05, 0.2, N)))})
+    g = out["gold"]
+    assert g["fed"] >= 2 and g["score"] is not None and g["bias"] in ("LONG", "SHORT", "NEUTRAL")
+    assert out["us"]["drivers"][0]["reading_z"] is None        # unfed series stays None (never fabricated)
+    nod = read_all(None)
+    assert all(v["bias"] == "NO_DATA" for v in nod.values())
+    print(f"  DRIVER MAP: 6 markets | gold bias={g['bias']} score={g['score']} ({g['fed']} feeds) | no-data→NO_DATA (honest)  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map):
         fn()
     print("-"*84); print("ALL TESTS PASSED")

@@ -187,11 +187,18 @@ def render(snap: dict):
     dealer_bt = _dealer_by_ticker(snap, prices)
     sq, mq = _quads(snap)
 
+    # driver-map feeds from whatever series the snap already has (honest: rest shows 'wire feed')
+    _drv_alias = {"DXY": ["DXY","DX=F","DX-Y.NYB"], "TIPS10Y": ["US10Y","^TNX","DGS10"], "VIX": _VIX,
+                  "USDIDR": ["USDIDR","IDR=X","USDIDR=X"], "EIA_CRUDE_INV": [], "ETF_BTC_FLOW": []}
+    driver_data = {}
+    for k, al in _drv_alias.items():
+        s = _find(prices, al) if al else None
+        if s is not None: driver_data[k] = s
     with st.spinner(f"Running GCFIS on {len(prices)} tickers (regime: {regime_method})…"):
         try:
             out = run_gcfis(prices, bench, posterior, systemic_inputs=systemic or None,
                             cross_asset_snapshot=cross_snap or None, volumes=volumes or None,
-                            dealer_by_ticker=dealer_bt or None)
+                            dealer_by_ticker=dealer_bt or None, driver_data=driver_data or None)
         except Exception as e:
             import traceback; st.error(f"GCFIS run failed: {e}"); st.code(traceback.format_exc()); return
 

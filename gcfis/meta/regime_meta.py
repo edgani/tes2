@@ -21,6 +21,25 @@ def _blend(post):
         for k in w: w[k] += p * c[k]
     return w
 
+
+# doc 5: each market ranks by ITS OWN dominant drivers — weighted geometric mean, not one universal model
+_MKT_W = {
+    "idx":       {"flow": 1.4, "accumulation": 1.3, "adoption": 1.0, "theme": 0.8, "bottleneck": 0.6, "reflexivity": 0.8},
+    "us":        {"theme": 1.2, "bottleneck": 1.3, "accumulation": 1.0, "adoption": 1.0, "reflexivity": 1.0, "flow": 1.0},
+    "crypto":    {"reflexivity": 1.3, "flow": 1.2, "adoption": 1.2, "accumulation": 1.1, "theme": 0.8, "bottleneck": 0.5},
+    "fx":        {"flow": 1.2, "accumulation": 1.0, "reflexivity": 0.8, "theme": 0.7, "bottleneck": 0.3, "adoption": 0.8},
+    "commodity": {"bottleneck": 1.3, "flow": 1.1, "accumulation": 1.0, "theme": 0.9, "reflexivity": 0.8, "adoption": 0.9},
+}
+
+def _wgeo(subs: dict, market: str) -> float:
+    """Weighted geometric mean: exp(Σ w·ln s / Σ w). Absent layers excluded (no penalty)."""
+    W = _MKT_W.get(market, {})
+    num = den = 0.0
+    for k, v in subs.items():
+        w = float(W.get(k, 1.0)); v = float(np.clip(v, 1e-3, 1.0))
+        num += w * np.log(v); den += w
+    return float(np.exp(num / den)) if den else 0.0
+
 def _z01(z, scale=4.0):       # z-ish (center 0) -> [0,1]
     return float(np.clip(0.5 + z / scale, 0.0, 1.0))
 
@@ -42,7 +61,13 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
         if theme is not None: subs["theme"] = _z01(theme)
         if bott is not None: subs["bottleneck"] = float(np.clip(bott, 0, 1))
         if reflex is not None: subs["reflexivity"] = float(np.clip(reflex / 100.0, 0, 1))
-        offensive = float(np.exp(np.mean(np.log(np.clip(list(subs.values()), 1e-3, 1.0)))))  # geomean
+        if a.get("flow01") is not None:
+            f01 = float(a["flow01"])
+            if a.get("broker_sign", 0) > 0: f01 = min(1.0, f01 + 0.10)     # IDX: broker accumulation reinforces flow
+            elif a.get("broker_sign", 0) < 0: f01 = max(0.0, f01 - 0.10)
+            subs["flow"] = float(np.clip(f01, 0, 1))
+        market = a.get("market", "us")
+        offensive = _wgeo(subs, market)                                    # doc 5: market-weighted geomean
         bull = offensive * 100.0
 
         # --- DISTRIBUTION (short side) ---
@@ -85,7 +110,7 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
             action, conv, direction = "STAND_ASIDE", max(meta_long, meta_short), "none"
         if not reason:
             conf_str = " · ".join(f"{k[:4]}={v:.2f}" for k, v in subs.items())
-            reason = f"{a.get('stage','?')} | crowd {crowd} | confluence[{conf_str}]→{offensive:.2f} | tiltL {W['long']:.2f}"
+            reason = f"{a.get('stage','?')} | {a.get('market','us')} | crowd {crowd} | confluence[{conf_str}]→{offensive:.2f} | tiltL {W['long']:.2f}"
 
         sc = {"meta_long": round(meta_long, 1), "meta_short": round(meta_short, 1),
               "accumulation": round(acc, 2), "confluence": round(offensive, 2)}

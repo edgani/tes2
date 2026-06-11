@@ -41,8 +41,18 @@ class TickerSignal:
     shock_prob: float = 0.0
     opportunity: dict = field(default_factory=dict)   # bear/base/bull/supercycle price targets
     rotation: dict = field(default_factory=dict)   # lead-lag rotation timing (leader/lag/window/strength)
+    # decision stack (doc 6) + market structure (doc 5/7) + flow (doc 1/2)
+    market: str = ""
+    market_mode: str = "MIXED"
+    flow: dict = field(default_factory=dict)
+    response: dict = field(default_factory=dict)
+    category: str = "WATCH"
+    why_now: list = field(default_factory=list)
+    whos_trapped: str = ""
+    invalidation: dict = field(default_factory=dict)
+    execution: dict = field(default_factory=dict)
     # sizing (gated)
     alloc_pct: float = 0.0
     capacity_ok: bool = True
     reason: str = ""
-    def as_dict(self): return {k: (v.copy() if isinstance(v, dict) else v) for k, v in self.__dict__.items()}
+    def as_dict(self): return {k: (v.copy() if isinstance(v, (dict, list)) else v) for k, v in self.__dict__.items()}

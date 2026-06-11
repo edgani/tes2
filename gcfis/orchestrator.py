@@ -16,6 +16,11 @@ from .engines.dealer import run_dealer
 from .engines.broker_flow import run_broker_flow
 from .engines.reflexivity import run_reflexivity
 from .engines.entry import run_entry
+from .engines.flow_type import run_flow_type
+from .engines.market_mode import run_market_mode
+from .engines.elimination import run_elimination
+from .engines.response_zone import run_response_zone
+from .meta.decision_stack import build_decision_stack
 from .engines.leadlag_discovery import run_leadlag_discovery
 from .engines.rotation import run_rotation
 from .engines.portfolio import run_portfolio
@@ -38,7 +43,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
               ticker_node_map=None, subthemes=None,
               earnings_rev_by_ticker=None, inst_own_by_ticker=None, etf_flow_by_ticker=None,
               options_oi_by_ticker=None, social_by_ticker=None, short_int_by_ticker=None, lev_etf_set=None,
-              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None):
+              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None, driver_data=None):
     si = systemic_inputs or {}
     # --- SYSTEMIC / CONTEXT (L1-L6, L10) ---
     frag = run_fragility(si, returns_matrix, index_returns)
@@ -56,7 +61,18 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                 "liquidity_regime": liq_score, "forward_quad": fwd.get("forward_quad"),
                 "cross_asset_regime": cross.get("regime")}
 
-    # --- PER-TICKER (L7,L9,L8,B5, broker) ---
+    # --- STAGE-1 ELIMINATION (doc 3): buang sampah sebelum scoring ---
+    eliminated = []
+    kept = {}
+    for _tkr, _px in prices.items():
+        _el = run_elimination(_px, (volumes or {}).get(_tkr), min_adv=min_adv)
+        if _el.get("eliminated"):
+            eliminated.append({"ticker": _tkr, "reasons": _el.get("reasons", [])})
+        else:
+            kept[_tkr] = _px
+    prices = kept
+
+    # --- PER-TICKER (L7,L9,L8,B5, broker, flow, mode, response) ---
     bott_scores = bott.get("scores", {}) if bott.get("ok") else {}
     node_map = dict(bott.get("ticker_node", {})) if bott.get("ok") else {}
     if ticker_node_map: node_map.update(ticker_node_map)
@@ -95,6 +111,13 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
             a["broker_verdict"] = bf.get("verdict", "")
         if (volumes or {}).get(tkr) is not None:
             a["adv"] = float((px * volumes[tkr]).tail(20).mean())
+        a["market"] = market_of(tkr, (market_hints or {}).get(tkr))
+        flw = run_flow_type(px, (volumes or {}).get(tkr))
+        a["flow"] = flw
+        a["flow01"] = flw.get("flow01") if flw.get("ok") else None
+        a["market_mode"] = run_market_mode(px, dealer=d, flow=flw, crowding=a.get("crowding", 50.0),
+                                            adoption_velocity=a.get("adoption_velocity", 0.0))
+        a["response"] = run_response_zone(px)
         per_ticker[tkr] = a
 
     # --- LEAD-LAG (LX) + ROTATION: wire the moat INTO selection (was decorative) ---
@@ -151,6 +174,9 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         sig.opportunity = {"bear": round(p * (1 - 1.0 * move), 2), "base": round(p * (1 + 0.4 * move), 2),
                            "bull": round(p * (1 + 1.5 * move), 2), "supercycle": round(p * (1 + 3.5 * move), 2)}
         sig.rotation = a.get("rotation", {})              # lead-lag rotation timing (if primed by a fired leader)
+        sig.market = mkt
+        sig.response = a.get("response", {})
+        build_decision_stack(sig, a)                       # doc 6: SO WHAT DO I DO NOW
         # cross-asset gate: defer NEW longs during liquidation ('data good but price falling' guard)
         deferred_long = bool(cross.get("defer_longs") and sig.direction == "long"
                              and sig.action in ("BUILD_LONG", "START_SCALING"))
@@ -161,6 +187,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         if lo and (sig.action == "BUILD_SHORT" or sig.direction == "short"):
             sig.action = "AVOID"; sig.direction = "none"; sig.entry_type = "AVOID"; sig.entry_valid = False
             sig.reason = f"long-only ({mkt}): distribution/bearish — reduce if holding, no short. " + (sig.reason or "")
+            build_decision_stack(sig, a)                   # re-stack as REDUCE_AVOID
             avoided.append(sig.as_dict()); continue
         sig.reason = build_reason(sig, a, systemic, cross)
         row = sig.as_dict()
@@ -178,11 +205,22 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     pf = run_portfolio([r["ticker"] for r in longs], prices)
     for r in longs:
         r["alloc_mult"] = pf.get("alloc_mult", {}).get(r["ticker"], 1.0)
-    return {"ok": True,
+        if r.get("execution"):
+            r["execution"]["size_x"] = round(min(1.0, r.get("conviction", 0) / 100.0) * r["alloc_mult"], 2)
+    def _cat(rows, c): return [r for r in rows if r.get("category") == c]
+    sections = {"early_monsters": _cat(longs, "STRUCTURAL_LONG"),
+                "tactical_momentum": _cat(longs, "TACTICAL_MOMENTUM"),
+                "squeeze": _cat(longs, "SQUEEZE"),
+                "mean_reversion": _cat(longs, "MEAN_REVERSION"),
+                "distribution_warning": shorts + avoided}
+    from .market_drivers import read_all as _read_drivers
+    drivers = _read_drivers(driver_data)
+    return {"ok": True, "drivers": drivers,
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],
                         "master_long": longs, "master_short": shorts, "master_spot": spots,
-                        "deferred_longs": deferred, "avoided_long_only": avoided, "portfolio": pf},
+                        "deferred_longs": deferred, "avoided_long_only": avoided, "portfolio": pf,
+                        "sections": sections, "eliminated": eliminated},
             "leadlag": {k: v for k, v in ll.items() if k != "_engine"},
             "rotation": rotation, "per_ticker": per_ticker}

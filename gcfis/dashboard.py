@@ -31,6 +31,24 @@ def _chip(label, value, color="#8b949e"):
     return (f"<span style='display:inline-block;margin:1px 6px 1px 0;font-size:.72rem;color:#c9d1d9'>"
             f"<span style='color:{color}'>{label}</span> {value}</span>")
 
+def _stack_block(r: dict) -> str:
+    """doc 6 decision stack: Type / Why-Now / Who-is-Trapped / Execution / Invalidation."""
+    cat = r.get("category")
+    if not cat or cat == "WATCH":
+        return ""
+    ex = r.get("execution") or {}; inv = r.get("invalidation") or {}; tg = ex.get("targets") or {}
+    why = " · ".join((r.get("why_now") or [])[:2])
+    conds = (inv.get("conditions") or ["—"])[0]
+    return ("<div style='margin-top:4px;padding:4px 7px;background:#161b22;border-radius:4px;"
+            "font-size:.74rem;color:#c9d1d9;line-height:1.5'>"
+            f"🧭 <b>{cat}</b> · mode {r.get('market_mode','-')} · hold {ex.get('holding','-')}<br>"
+            f"⚡ {why}<br>"
+            f"🪤 {r.get('whos_trapped','')}<br>"
+            f"▶ {ex.get('mode','-')} · aggression {ex.get('aggression','-')} · size×{ex.get('size_x','-')} · "
+            f"targets {tg.get('near','-')} → {tg.get('expansion','-')} → {tg.get('convex','-')}<br>"
+            f"✋ invalid: {conds} (px {inv.get('price','-')})</div>")
+
+
 def card_html(r: dict, deferred: bool = False) -> str:
     """Full per-ticker contract card (pure string; no streamlit)."""
     label, col = alpha_badge(r, deferred=deferred)
@@ -61,6 +79,11 @@ def card_html(r: dict, deferred: bool = False) -> str:
     macro = (_chip("Quad", (mac.get("quad") or "—"), "#d29922") + _chip("Liq", mac.get("liquidity_regime"), "#d29922")
              + _chip("Frag", mac.get("fragility"), "#d29922") + _chip("Shock", mac.get("shock_prob"), "#d29922")
              + _chip("X-asset", mac.get("cross_asset_regime"), "#d29922"))
+    fl = r.get("flow") or {}
+    modeflow = (_chip("Mode", r.get("market_mode"), "#e3b341") + _chip("Mkt", r.get("market"), "#e3b341")
+                + (_chip("Flow", fl.get("type"), "#79c0ff") if fl.get("type") else "")
+                + _chip("abs", fl.get("absorption"), "#79c0ff") + _chip("eff", fl.get("efficiency"), "#79c0ff")
+                + (_chip("⚠proxy", "OHLCV", "#57606a") if fl.get("proxy") else ""))
     entry = _chip("Entry", format_entry(r), "#3fb950")
     scen = (_chip("bear", opp.get("bear"), "#cf222e") + _chip("base", opp.get("base"), "#8b949e")
             + _chip("bull", opp.get("bull"), "#1a7f37") + _chip("super", opp.get("supercycle"), "#1a7f37"))
@@ -69,9 +92,11 @@ def card_html(r: dict, deferred: bool = False) -> str:
             f"<div style='margin-top:3px'>{scores}</div>"
             f"<div>{options}</div>"
             f"<div>{macro}</div>"
+            f"<div>{modeflow}</div>"
             f"<div style='margin-top:2px'>{entry}{rotation_chip}{_chip('size×', r.get('alloc_mult'), '#8b949e') if r.get('alloc_mult',1)!=1 else ''}</div>"
             f"<div>📈 {scen}</div>"
-            f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div></div>")
+            f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div>"
+            f"{_stack_block(r)}</div>")
 
 # ---------- streamlit render ----------
 def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
@@ -104,9 +129,19 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
         for r in rows:
             st.markdown(card_html(r, deferred=deferred), unsafe_allow_html=True)
 
-    _section(rank.get("master_long", []), "🟢 LONG", "No qualified longs this regime.")
-    _section(rank.get("master_short", []), "🔴 SHORT", "No qualified shorts.")
-    _section(rank.get("master_spot", []), "💎 SPOT (uncrowded accumulation)", "No sweet-spot names.")
+    sec = rank.get("sections") or {}
+    if sec:
+        _section(sec.get("early_monsters", []), "💎 EARLY MONSTERS — structural accumulation (weeks–months)", "none this regime")
+        _section(sec.get("squeeze", []), "⚡ SQUEEZE ENGINE — forced-flow potential (tactical)", "none")
+        _section(sec.get("tactical_momentum", []), "🚀 TACTICAL MOMENTUM — accepted expansion (days–weeks)", "none")
+        _section(sec.get("mean_reversion", []), "🔄 MEAN REVERSION — exhaustion/reclaim scalps", "none")
+        _section(sec.get("distribution_warning", []), "🔴 DISTRIBUTION WARNING — reduce / short (where shortable)", "none")
+        if rank.get("eliminated"):
+            st.caption("🗑 eliminated (stage-1): " + ", ".join(f"{e['ticker']} ({e['reasons'][0][:38]}…)" for e in rank["eliminated"][:6]))
+    else:
+        _section(rank.get("master_long", []), "🟢 LONG", "No qualified longs this regime.")
+        _section(rank.get("master_short", []), "🔴 SHORT", "No qualified shorts.")
+        _section(rank.get("master_spot", []), "💎 SPOT (uncrowded accumulation)", "No sweet-spot names.")
     pf = rank.get("portfolio", {})
     if pf.get("warning"):
         st.warning("📦 Portfolio concentration: " + pf["warning"])
@@ -120,6 +155,21 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
         for r in rank["avoided_long_only"]:
             st.markdown(card_html(r), unsafe_allow_html=True)
 
+    drv = out.get("drivers") or {}
+    if drv:
+        with st.expander("📡 Market Driver Map — surge-up / surge-down per market (researched Jun-2026)"):
+            for mkt, dd in drv.items():
+                bias = dd.get("bias"); col = "#1a7f37" if bias == "LONG" else "#cf222e" if bias == "SHORT" else "#57606a"
+                st.markdown(f"**{mkt.upper()}** — bias <span style='color:{col}'>{bias}</span>"
+                            f"{' (score ' + str(dd.get('score')) + ', ' + str(dd.get('fed')) + ' feeds live)' if dd.get('score') is not None else ' — wire feeds to activate'}",
+                            unsafe_allow_html=True)
+                for r in dd.get("drivers", []):
+                    z = r.get("reading_z")
+                    zs = (f"<b style='color:{'#1a7f37' if r['sign']*z>0 else '#cf222e'}'>z {z:+.2f}</b>" if z is not None
+                          else f"<span style='color:#57606a'>feed: {r['series']}</span>")
+                    st.markdown(f"<span style='font-size:.76rem;color:#c9d1d9'>· [{r['horizon']}·{'★'*r['strength']}] "
+                                f"{r['factor']} ({'+' if r['sign']>0 else '−'}) — {zs}<br>"
+                                f"<span style='color:#8b949e'>&nbsp;&nbsp;{r['note']}</span></span>", unsafe_allow_html=True)
     with st.expander("lead–lag (discovered)"):
         ll = out.get("leadlag", {})
         st.json(ll if ll.get("ok") else {"note": "need >=2 tickers / pairs"})
