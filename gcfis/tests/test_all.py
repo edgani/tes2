@@ -201,11 +201,28 @@ def t_rotation_portfolio_e2e():
     print(f"  LX→selection e2e: leadlag discovered LEADER→FOLLOWER, rotation primed FOLLOWER "
           f"(window {out['rotation']['FOLLOWER']['window']}d) | portfolio bets={out['ranking']['portfolio']['effective_bets']}  OK")
 
+def t_long_only_idx():
+    from gcfis.markets import market_of, is_long_only
+    from gcfis.engines.entry import run_entry
+    assert market_of("BREN.JK") == "idx" and is_long_only("BREN.JK")
+    assert (not is_long_only("TSLA")) and market_of("BTCUSD") == "crypto" and market_of("XAUUSD") == "commodity"
+    dn = S(100*np.exp(np.cumsum(rng.normal(-0.002, 0.015, N))))            # downtrend
+    assert run_entry(dn, "short", long_only=True)["entry_type"] == "AVOID"  # buy-only: no short
+    assert run_entry(dn, "short", long_only=False)["entry_type"] != "AVOID" # shortable market: real short
+    # e2e: same bearish tape on a .JK vs a US name in risk_off — IDX can NEVER be in master_short
+    out = run_gcfis({"BREN.JK": dn, "TSLA": dn.copy()}, S(0.0), {"risk_off": 0.9, "transition_down": 0.1},
+                    systemic_inputs={"credit": S(rng.normal(2, 1, N)), "vol": S(rng.normal(2, 1, N))})
+    short_tkrs = [r["ticker"] for r in out["ranking"]["master_short"]]
+    assert "BREN.JK" not in short_tkrs, f"IDX must never be shorted, got {short_tkrs}"
+    assert "avoided_long_only" in out["ranking"]
+    print(f"  LONG-ONLY (doc 5): BREN.JK→idx buy-only · run_entry short→AVOID · master_short={short_tkrs} (no .JK) · "
+          f"avoided bucket present  OK")
+
 if __name__ == "__main__":
-    print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio)"); print("-"*78)
+    print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
-               t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,
+               t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
                t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e):
         fn()
-    print("-"*78); print("ALL TESTS PASSED")
+    print("-"*84); print("ALL TESTS PASSED")

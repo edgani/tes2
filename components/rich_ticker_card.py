@@ -65,8 +65,11 @@ def _cur_for(market_key=None, ticker=None):
 
 
 def _directional_levels(px, direction, *, t_lrr=0, t_trr=0, tr_lrr=0, tr_trr=0,
-                        tl_lrr=0, tl_trr=0, call_wall=None, put_wall=None):
+                        tl_lrr=0, tl_trr=0, call_wall=None, put_wall=None, long_only=False):
     """Direction-aware entry/target/stop that ALWAYS stays on the correct side of price.
+
+    long_only (IDX/spot equity): a SHORT is impossible, so a bearish read is degraded to a range/flat
+    layout (target stays ABOVE entry) — never a 'short' whose target sits below entry on a buy-only name.
 
     Why this exists: after FIX-BASIS the TREND band is anchored to SMA63 and TAIL to SMA756, so a band
     can sit ENTIRELY above or below spot. A band edge is therefore only a valid target/stop if it's on
@@ -75,6 +78,8 @@ def _directional_levels(px, direction, *, t_lrr=0, t_trr=0, tr_lrr=0, tr_trr=0,
       LONG  → entry near TRADE LRR (support);    target = nearest level ABOVE px; stop = just below nearest support
       SHORT → entry near TRADE TRR (resistance);  target = nearest level BELOW px; stop = just above nearest resistance
     Returns {entry_lo, entry_hi, target, target2, stop} or {} if px invalid."""
+    if long_only and direction == "short":
+        direction = "flat"                          # buy-only market: no short layout, ever
     try:
         px = float(px)
     except (TypeError, ValueError):
@@ -116,7 +121,7 @@ def _directional_levels(px, direction, *, t_lrr=0, t_trr=0, tr_lrr=0, tr_trr=0,
             "target": b["t_trr"] or px * 1.03, "target2": None, "stop": b["t_lrr"] or px * 0.97}
 
 
-def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None):
+def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None, long_only=False):
     """Unified DARK chart on a price x-axis: GEX-by-strike bars + aggregate gamma curve +
     put/call walls + gamma flip + max pain + TRADE/TREND/TAIL bands + Entry/Target/SL X-marks.
     show_walls=False (forex/commodity/IHSG = no listed options) → suppress all options-derived
@@ -150,14 +155,22 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
         px = (((_tl0 or 0) + (_tt0 or 0)) / 2) or None
     # DIRECTION-AWARE entry/target/stop (was hardcoded as a LONG layout → short setups drew target
     # above entry). Derive direction from the risk-range phase; helper keeps levels on the right side.
+    _long_only = bool(long_only) or str(ticker).upper().endswith(".JK")     # IDX = buy-only
     _pc = rr.get("phase_code", 0); _phs = rr.get("phase", "")
     _dir = "long" if (_phs == "BULL" or _pc == 1) else "short" if (_phs == "BEAR" or _pc == -1) else "flat"
+    if _long_only and _dir == "short":
+        _dir = "flat"                          # buy-only: bearish → range/fade-long, NEVER a short layout
     _lv = _directional_levels(px, _dir, t_lrr=trade.get("lrr"), t_trr=trade.get("trr"),
                               tr_lrr=trend.get("lrr"), tr_trr=trend.get("trr"),
                               tl_lrr=tail.get("lrr"), tl_trr=tail.get("trr"),
-                              call_wall=cw, put_wall=pw) if px else {}
+                              call_wall=cw, put_wall=pw, long_only=_long_only) if px else {}
     entry = _lv.get("entry_hi") if _dir == "short" else _lv.get("entry_lo")
     target = _lv.get("target"); stop = _lv.get("stop")
+    # STALE GUARD: price has already moved past the entry zone → the setup is no longer actionable.
+    _stale = False
+    if px and entry:
+        if _dir == "short" and px < entry * 0.97: _stale = True   # short entry is resistance ABOVE; price already dropped away
+        elif _dir != "short" and stop and px < stop: _stale = True  # long support broke (price below stop)
 
     # Core extent = risk-range bands + price + entry/target/stop — always meaningful and tight.
     core = [v for v in [px, entry, target, stop,
@@ -224,7 +237,10 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 11},
         margin={"t": 34, "b": 38, "l": 52, "r": 52}, height=330,
         legend={"orientation": "h", "y": 1.14, "x": 0, "font": {"size": 9}, "bgcolor": "rgba(0,0,0,0)"},
-        title={"text": f"{ticker} — {'GEX + ' if show_walls else ''}Risk Range + Entry/Target/SL", "font": {"size": 13, "color": "#c9d1d9"}},
+        title={"text": f"{ticker} — {'GEX + ' if show_walls else ''}Risk Range + Entry/Target/SL"
+                       + ("  ·  ⚠ harga sudah lewat entry (telat)" if _stale else "")
+                       + ("  ·  buy-only" if _long_only else ""),
+               "font": {"size": 13, "color": "#c9d1d9"}},
         xaxis={"title": {"text": f"Price ({cur})", "font": {"size": 10, "color": "#8b949e"}},
                "range": [x0, x1], "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}, "zeroline": False},
         yaxis={"title": {"text": "GEX by strike", "font": {"size": 10, "color": "#8b949e"}},
@@ -414,7 +430,8 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
     if part in ("all", "main"):
       try:
         _setup = _setup_text_cols(rr, snap, ticker, market_key)
-        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls, setup=_setup)
+        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls, setup=_setup,
+                                 long_only=(market_key == "ihsg" or str(ticker).upper().endswith(".JK")))
         if _fig is not None:
             st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
       except Exception:
@@ -1050,12 +1067,13 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
     cur = _cur_for(market_key, ticker)
     def _f(v): return f"{cur}{format(v, fmt)}"
 
-    _dirce = "long" if bull else "short" if bear else "flat"
+    _long_only_ce = (market_key == "ihsg") or str(ticker).upper().endswith(".JK")
+    _dirce = "long" if bull else ("flat" if _long_only_ce else "short") if bear else "flat"
     _lvce = _directional_levels(px, _dirce, t_lrr=lrr, t_trr=trr,
                                 tr_lrr=rr.get("trend", {}).get("lrr", 0) or 0,
                                 tr_trr=rr.get("trend", {}).get("trr", 0) or 0,
                                 tl_lrr=rr.get("tail", {}).get("lrr", 0) or 0,
-                                tl_trr=rr.get("tail", {}).get("trr", 0) or 0)
+                                tl_trr=rr.get("tail", {}).get("trr", 0) or 0, long_only=_long_only_ce)
     if bull:
         stop = _lvce.get("stop", lrr - width * 0.30)
         target1 = _lvce.get("target", trr)
@@ -1688,9 +1706,11 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
     def pct(v): return f"{(v/px-1)*100:+.1f}%"
 
     # ── INSTRUMENT + DIRECTION ──
+    _long_only = (market_key == "ihsg") or str(ticker).upper().endswith(".JK")   # IDX/spot equity = buy-only
     instrument = None; direction = None; conviction = "medium"
-    if market_key == "ihsg":
-        instrument, direction = ("AKUMULASI (beli spot bertahap)", "long") if bull else ("WAIT / hindari (buy-only)", "flat")
+    if _long_only:
+        instrument, direction = (("AKUMULASI (beli spot bertahap)", "long") if bull
+                                 else ("WAIT / hindari (buy-only)", "flat"))      # bearish buy-only → WAIT, NEVER short
     elif market_key in ("commodity", "forex"):
         instrument, direction = ("LONG FUTURES", "long") if bull else ("SHORT FUTURES", "short") if bear else ("WAIT (range)", "flat")
     else:  # us_equity / crypto

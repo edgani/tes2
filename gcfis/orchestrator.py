@@ -23,6 +23,7 @@ from .engines.cross_asset import run_cross_asset
 from .engines.narrative import build_reason
 from .meta.regime_meta import run_regime_meta
 from .core.change_core import delta_z as _dz, last as _last
+from .markets import market_of, is_long_only
 
 def _ticker_theme(tkr, theme_baskets):
     for th, ts in (theme_baskets or {}).items():
@@ -37,7 +38,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
               ticker_node_map=None, subthemes=None,
               earnings_rev_by_ticker=None, inst_own_by_ticker=None, etf_flow_by_ticker=None,
               options_oi_by_ticker=None, social_by_ticker=None, short_int_by_ticker=None, lev_etf_set=None,
-              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None):
+              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None):
     si = systemic_inputs or {}
     # --- SYSTEMIC / CONTEXT (L1-L6, L10) ---
     frag = run_fragility(si, returns_matrix, index_returns)
@@ -111,11 +112,13 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     import numpy as np
     shock_p = shock.get("shock_prob", 0) if shock.get("ok") else 0
     frag_v = frag.get("fragility", 0) if frag.get("ok") else 0
-    longs, shorts, spots, deferred = [], [], [], []
+    longs, shorts, spots, deferred, avoided = [], [], [], [], []
     for sig in ranking["signals"]:
         px = prices[sig.ticker]; p = float(px.iloc[-1])
+        mkt = market_of(sig.ticker, (market_hints or {}).get(sig.ticker))
+        lo = is_long_only(sig.ticker, (market_hints or {}).get(sig.ticker))
         if sig.direction in ("long", "short"):
-            e = run_entry(px, sig.direction, dealer=dealers.get(sig.ticker), liquidity_score=liq_score)
+            e = run_entry(px, sig.direction, dealer=dealers.get(sig.ticker), liquidity_score=liq_score, long_only=lo)
             if e.get("ok"):
                 sig.entry_type = e["entry_type"]; sig.entry_valid = e["valid"]; sig.gamma_regime = e["gamma_regime"]
                 sig.entry_px = e["entry_px"]; sig.stop = e["stop"]; sig.target = e["target"]; sig.rr = e["rr"]
@@ -126,7 +129,8 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                        "vanna": d.get("vanna"), "charm": d.get("charm"), "is_real": bool(d.get("ok"))}
         # macro context stamped per ticker
         sig.macro = {"quad": systemic.get("forward_quad"), "liquidity_regime": liq_score,
-                     "fragility": frag_v, "shock_prob": shock_p, "cross_asset_regime": cross.get("regime")}
+                     "fragility": frag_v, "shock_prob": shock_p, "cross_asset_regime": cross.get("regime"),
+                     "market": mkt}
         sig.shock_prob = shock_p
         a = per_ticker[sig.ticker]
         # complete Scores panel (liquidity/dealer/positioning) — full GCFIS Scores contract
@@ -152,6 +156,12 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                              and sig.action in ("BUILD_LONG", "START_SCALING"))
         if deferred_long:
             sig.entry_valid = False
+        # LONG-ONLY ENFORCEMENT (doc 5): a buy-only market (IDX) can't short — a bearish/distribution
+        # read becomes AVOID/REDUCE, never a tradeable short with a target below entry.
+        if lo and (sig.action == "BUILD_SHORT" or sig.direction == "short"):
+            sig.action = "AVOID"; sig.direction = "none"; sig.entry_type = "AVOID"; sig.entry_valid = False
+            sig.reason = f"long-only ({mkt}): distribution/bearish — reduce if holding, no short. " + (sig.reason or "")
+            avoided.append(sig.as_dict()); continue
         sig.reason = build_reason(sig, a, systemic, cross)
         row = sig.as_dict()
         if deferred_long:
@@ -173,6 +183,6 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],
                         "master_long": longs, "master_short": shorts, "master_spot": spots,
-                        "deferred_longs": deferred, "portfolio": pf},
+                        "deferred_longs": deferred, "avoided_long_only": avoided, "portfolio": pf},
             "leadlag": {k: v for k, v in ll.items() if k != "_engine"},
             "rotation": rotation, "per_ticker": per_ticker}

@@ -15,10 +15,15 @@ def _atr(px: pd.Series, n: int = 14) -> float:
     return last(px.diff().abs().rolling(n).mean(), px.std() * 0.02)  # close-only ATR proxy
 
 def run_entry(price: pd.Series, direction: str, dealer: dict | None = None,
-              liquidity_score: float = 50.0, k_atr: float = 2.0, rr_min: float = 1.5) -> dict:
+              liquidity_score: float = 50.0, k_atr: float = 2.0, rr_min: float = 1.5, long_only: bool = False) -> dict:
     px = pd.to_numeric(pd.Series(price), errors="coerce").dropna()
     if len(px) < 60:
         return {"ok": False, "reason": "insufficient history"}
+    if long_only and direction == "short":          # buy-only market: a bearish read is WAIT/reduce, never a short
+        return {"ok": True, "entry_type": "AVOID", "valid": False,
+                "gamma_regime": (dealer or {}).get("regime", "unknown"),
+                "warning": "long-only market — bearish/distribution, no short (WAIT or reduce if holding)",
+                "entry_px": 0.0, "stop": 0.0, "target": 0.0, "rr": 0.0, "entry_score": 0.0}
     p = float(px.iloc[-1]); sma50 = px.rolling(50).mean().iloc[-1]; sma200 = px.rolling(200).mean().iloc[-1] if len(px) >= 200 else sma50
     hi20, lo20 = px.tail(20).max(), px.tail(20).min()
     pos = (p - lo20) / (hi20 - lo20) if hi20 > lo20 else 0.5

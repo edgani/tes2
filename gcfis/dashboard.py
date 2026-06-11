@@ -114,6 +114,11 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
         st.caption(f"📦 Portfolio: {pf['effective_bets']} independent bets across {pf['n_longs']} longs")
     if rank.get("deferred_longs"):
         _section(rank["deferred_longs"], "⏸ DEFERRED LONGS (cross-asset gate)", "", deferred=True)
+    if rank.get("avoided_long_only"):
+        st.markdown(f"#### 🚫 AVOID — long-only market, bearish/distribution  ·  {len(rank['avoided_long_only'])}")
+        st.caption("Buy-only market (IDX): can't short. Reduce if holding; wait for reclaim. No short, no target-below-entry.")
+        for r in rank["avoided_long_only"]:
+            st.markdown(card_html(r), unsafe_allow_html=True)
 
     with st.expander("lead–lag (discovered)"):
         ll = out.get("leadlag", {})
