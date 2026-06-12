@@ -46,3 +46,41 @@ def render_gcfis_section(snap: dict, st, max_long: int = 8, max_short: int = 4):
             st.caption("Full radar + lead–lag + opportunity scenarios in the 🧭 GCFIS tab.")
     except Exception:
         return
+
+
+def get_gcfis_output(snap: dict, st):
+    """Run GCFIS once per snapshot and cache in session_state (all 6 tabs reuse this)."""
+    try:
+        key = "_gcfis_out_" + str(id(snap.get("prices")))
+        if hasattr(st, "session_state") and key in st.session_state:
+            return st.session_state[key]
+        from pages_lib import gcfis_intel as gi
+        from gcfis.orchestrator import run_gcfis
+        prices, volumes = gi._prices_dict(snap)
+        if len(prices) < 2:
+            return None
+        bench = gi._find(prices, gi._BENCH)
+        if bench is None: bench = next(iter(prices.values()))
+        posterior, method = gi._regime_posterior(snap, prices, bench)
+        drv = {}
+        for k, al in {"DXY": ["DXY","DX=F","DX-Y.NYB"], "TIPS10Y": ["US10Y","^TNX","DGS10"],
+                      "VIX": gi._VIX, "USDIDR": ["USDIDR","IDR=X","USDIDR=X"]}.items():
+            s = gi._find(prices, al)
+            if s is not None: drv[k] = s
+        out = run_gcfis(prices, bench, posterior,
+                        systemic_inputs=gi._systemic_inputs(prices, bench) or None,
+                        cross_asset_snapshot=gi._cross_snapshot(prices) or None,
+                        volumes=volumes or None, dealer_by_ticker=gi._dealer_by_ticker(snap, prices) or None,
+                        driver_data=drv or None)
+        out["_regime_method"] = method
+        try:
+            sq, mq = gi._quads(snap)
+            if sq: out.setdefault("systemic", {}).setdefault("forward_macro", {})["forward_quad"] = sq
+        except Exception:
+            pass
+        if hasattr(st, "session_state"):
+            try: st.session_state[key] = out
+            except Exception: pass
+        return out
+    except Exception:
+        return None

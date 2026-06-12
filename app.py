@@ -83,14 +83,12 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build s56 — GCFIS layer (🧭 tab)")
+    st.caption("v40 · build s57 — 6-tab causal OS (final design)")
     st.divider()
     
     page = st.radio("Navigation", [
-        "🏠 Dashboard", "⚡ Alpha Center", "🧭 GCFIS",
-        "🇺🇸 US Stocks", "💱 Forex", "🛢️ Commodities",
-        "₿ Crypto", "🇮🇩 IHSG",
-        "📖 Themes", "📊 Portfolio Stress",
+        "🛰 Mission Control", "🌐 Regime & Flow", "⚡ Opportunity",
+        "🗺 Market Intelligence", "🔬 Ticker Intelligence", "📊 Portfolio & Scenario",
     ], label_visibility="collapsed", key="page_radio")
     st.session_state.page = page
     
@@ -197,36 +195,24 @@ if not snap.get("ok"):
     st.json(snap)
 else:
     try:
-        if page == "🏠 Dashboard":
-            from pages_lib import dashboard
-            dashboard.render(snap)
-        elif page == "⚡ Alpha Center":
-            from pages_lib import alpha_center
-            alpha_center.render(snap)
-        elif page == "🧭 GCFIS":
-            from pages_lib import gcfis_intel
-            gcfis_intel.render(snap)
-        elif page == "🇺🇸 US Stocks":
-            from pages_lib import us_stocks
-            us_stocks.render(snap)
-        elif page == "💱 Forex":
-            from pages_lib import forex
-            forex.render(snap)
-        elif page == "🛢️ Commodities":
-            from pages_lib import commodities
-            commodities.render(snap)
-        elif page == "₿ Crypto":
-            from pages_lib import crypto
-            crypto.render(snap)
-        elif page == "🇮🇩 IHSG":
-            from pages_lib import ihsg
-            ihsg.render(snap)
-        elif page == "📖 Themes":
-            from pages_lib import themes
-            themes.render(snap)
-        elif page == "📊 Portfolio Stress":
-            from pages_lib import portfolio_stress
-            portfolio_stress.render(snap)
+        if page == "🛰 Mission Control":
+            from pages_lib import mission_control
+            mission_control.render(snap)
+        elif page == "🌐 Regime & Flow":
+            from pages_lib import regime_flow
+            regime_flow.render(snap)
+        elif page == "⚡ Opportunity":
+            from pages_lib import opportunity
+            opportunity.render(snap)
+        elif page == "🗺 Market Intelligence":
+            from pages_lib import market_intel
+            market_intel.render(snap)
+        elif page == "🔬 Ticker Intelligence":
+            from pages_lib import ticker_intel
+            ticker_intel.render(snap)
+        elif page == "📊 Portfolio & Scenario":
+            from pages_lib import portfolio_scenario
+            portfolio_scenario.render(snap)
     except Exception as e:
         st.error(f"Page error: {e}")
         import traceback

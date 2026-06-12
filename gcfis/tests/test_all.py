@@ -305,11 +305,24 @@ def t_bm_idx_wiring_e2e():
     print(f"  BM idx e2e: STR.JK regime={a['bm']['regime']} score={a['bm']['flow_score']} flow01={a['flow01']:.2f} "
           f"| card carries BM + why_now mentions domestic markup  OK")
 
+def t_internals_horizon():
+    from gcfis.engines.internals import run_horizon, run_internals
+    r = np.random.default_rng(21)
+    up = S(100*np.exp(np.cumsum(r.normal(0.003, 0.01, N))))
+    h = run_horizon(up)
+    assert h["ok"] and h["alignment"] >= 70, h
+    prices = {"B": up}
+    for i in range(7):
+        prices[f"D{i}"] = S(100*np.exp(np.cumsum(r.normal(-0.002, 0.012, N))))
+    out = run_internals(prices, bench=up)
+    assert out["breadth"] is not None and any("breadth" in d for d in out["divergences"]), out
+    print(f"  INTERNALS: horizon align={h['alignment']} | breadth={out['breadth']} → narrow-fragility divergence fired | pairs n={len(out['pairs'])}  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon):
         fn()
     print("-"*84); print("ALL TESTS PASSED")

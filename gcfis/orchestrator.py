@@ -20,6 +20,7 @@ from .engines.flow_type import run_flow_type
 from .engines.market_mode import run_market_mode
 from .engines.elimination import run_elimination
 from .engines.response_zone import run_response_zone
+from .engines.internals import run_internals, run_horizon
 from .meta.decision_stack import build_decision_stack
 from .engines.leadlag_discovery import run_leadlag_discovery
 from .engines.rotation import run_rotation
@@ -119,6 +120,8 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         a["market_mode"] = run_market_mode(px, dealer=d, flow=flw, crowding=a.get("crowding", 50.0),
                                             adoption_velocity=a.get("adoption_velocity", 0.0))
         a["response"] = run_response_zone(px)
+        a["dealer"] = d
+        a["horizon"] = run_horizon(px)
         # BandarMetrics REDESIGN (IDX only, needs Type-F fb/fs): regime-conditioned flow replaces the proxy
         if a["market"] == "idx" and typef_by_ticker and tkr in typef_by_ticker:
             try:
@@ -228,7 +231,8 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                 "distribution_warning": shorts + avoided}
     from .market_drivers import read_all as _read_drivers
     drivers = _read_drivers(driver_data)
-    return {"ok": True, "drivers": drivers,
+    internals = run_internals(prices, bench)
+    return {"ok": True, "drivers": drivers, "internals": internals,
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],

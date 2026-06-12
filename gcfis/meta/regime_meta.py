@@ -31,9 +31,16 @@ _MKT_W = {
     "commodity": {"bottleneck": 1.3, "flow": 1.1, "accumulation": 1.0, "theme": 0.9, "reflexivity": 0.8, "adoption": 0.9},
 }
 
-def _wgeo(subs: dict, market: str) -> float:
-    """Weighted geometric mean: exp(Σ w·ln s / Σ w). Absent layers excluded (no penalty)."""
-    W = _MKT_W.get(market, {})
+def _wgeo(subs: dict, market: str, stress: bool = False) -> float:
+    """Weighted geometric mean: exp(Σ w·ln s / Σ w). Absent layers excluded (no penalty).
+    stress=True (deleveraging / risk-off) → adaptive tilt: flow & accumulation matter MORE,
+    theme & reflexivity matter LESS (doc-6 adaptive-weight layer; multipliers are priors)."""
+    W = dict(_MKT_W.get(market, {}))
+    if stress:
+        W["flow"] = W.get("flow", 1.0) * 1.25
+        W["accumulation"] = W.get("accumulation", 1.0) * 1.10
+        W["theme"] = W.get("theme", 1.0) * 0.85
+        W["reflexivity"] = W.get("reflexivity", 1.0) * 0.80
     num = den = 0.0
     for k, v in subs.items():
         w = float(W.get(k, 1.0)); v = float(np.clip(v, 1e-3, 1.0))
@@ -67,7 +74,9 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
             elif a.get("broker_sign", 0) < 0: f01 = max(0.0, f01 - 0.10)
             subs["flow"] = float(np.clip(f01, 0, 1))
         market = a.get("market", "us")
-        offensive = _wgeo(subs, market)                                    # doc 5: market-weighted geomean
+        cross = (systemic or {}).get("cross_asset", {}) or {}
+        stress_mode = bool(cross.get("defer_longs")) or float((regime_posterior or {}).get("risk_off", 0) or 0) > 0.5
+        offensive = _wgeo(subs, market, stress=stress_mode)                # doc 5 + adaptive stress tilt
         bull = offensive * 100.0
 
         # --- DISTRIBUTION (short side) ---
