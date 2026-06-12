@@ -38,6 +38,11 @@ def _why_now(sig, a):
     if a.get("sweet_spot"): w.append("uncrowded sweet-spot (Stage 2→3 adoption)")
     if a.get("bottleneck_node"): w.append(f"supply-chain bottleneck: {a['bottleneck_node']}")
     if a.get("broker_verdict") == "NET_ACCUMULATION": w.append("smart-money net buying (broker flow)")
+    bm = a.get("bm") or {}
+    if bm.get("regime") == "DOMESTIC_LED" and bm.get("flow_score", 0) > 20:
+        w.append("domestic-led markup vs foreign selling (counter-consensus — the 2025-IHSG pattern)")
+    if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) > 20:
+        w.append(f"foreign-led bid (EFD {bm.get('efd')}) — follow the foreign tape")
     rz = a.get("response") or {}
     if rz.get("response") == "FAILED_BREAKDOWN_RECLAIM": w.append("failed breakdown + reclaim at lower band (trapped shorts)")
     if rz.get("response") == "ACCEPTANCE_ABOVE": w.append("acceptance above range (valid expansion, not a wick)")
@@ -51,6 +56,11 @@ def _whos_trapped(sig, a, mode):
     if rz == "REJECTION": return "breakout buyers trapped above the band"
     if crowd > 85 and vel < 0: return "late euphoric longs — unwind risk"
     if f == "PANIC_LIQUIDATION": return "weak hands just flushed — supply reduced"
+    bm = a.get("bm") or {}
+    if bm.get("regime") == "DOMESTIC_LED" and bm.get("flow_score", 0) > 20:
+        return "foreign sellers are the exit liquidity — domestic marking up against them"
+    if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) < -20:
+        return "foreign-led distribution — do not fade the foreign tape"
     if crowd < 25 and sig.direction == "long": return "underexposed institutions — chase risk is UP"
     return "no acute trap — flow-driven setup"
 

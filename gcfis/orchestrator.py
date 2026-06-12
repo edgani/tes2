@@ -29,6 +29,7 @@ from .engines.narrative import build_reason
 from .meta.regime_meta import run_regime_meta
 from .core.change_core import delta_z as _dz, last as _last
 from .markets import market_of, is_long_only
+import numpy as np
 
 def _ticker_theme(tkr, theme_baskets):
     for th, ts in (theme_baskets or {}).items():
@@ -43,7 +44,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
               ticker_node_map=None, subthemes=None,
               earnings_rev_by_ticker=None, inst_own_by_ticker=None, etf_flow_by_ticker=None,
               options_oi_by_ticker=None, social_by_ticker=None, short_int_by_ticker=None, lev_etf_set=None,
-              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None, driver_data=None):
+              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None, driver_data=None, typef_by_ticker=None):
     si = systemic_inputs or {}
     # --- SYSTEMIC / CONTEXT (L1-L6, L10) ---
     frag = run_fragility(si, returns_matrix, index_returns)
@@ -118,6 +119,17 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         a["market_mode"] = run_market_mode(px, dealer=d, flow=flw, crowding=a.get("crowding", 50.0),
                                             adoption_velocity=a.get("adoption_velocity", 0.0))
         a["response"] = run_response_zone(px)
+        # BandarMetrics REDESIGN (IDX only, needs Type-F fb/fs): regime-conditioned flow replaces the proxy
+        if a["market"] == "idx" and typef_by_ticker and tkr in typef_by_ticker:
+            try:
+                from .engines.flow_regime import FlowRegimeEngine
+                bm = FlowRegimeEngine(typef_by_ticker[tkr]).latest()
+                a["bm"] = bm
+                a["flow01"] = float(np.clip(0.5 + (bm["flow_score"] / 200.0) * bm["confidence"], 0.0, 1.0))
+                if a.get("broker_sign", 0) == 0:
+                    a["broker_sign"] = 1 if bm["flow_score"] > 20 else -1 if bm["flow_score"] < -20 else 0
+            except Exception:
+                a["bm"] = {"regime": "ERROR"}
         per_ticker[tkr] = a
 
     # --- LEAD-LAG (LX) + ROTATION: wire the moat INTO selection (was decorative) ---
@@ -132,7 +144,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     ranking = run_regime_meta(per_ticker, systemic, regime_posterior, min_adv=min_adv)
 
     # --- ENTRY (L13) + cross-asset gate + full contract attach + reason per signal ---
-    import numpy as np
+
     shock_p = shock.get("shock_prob", 0) if shock.get("ok") else 0
     frag_v = frag.get("fragility", 0) if frag.get("ok") else 0
     longs, shorts, spots, deferred, avoided = [], [], [], [], []
@@ -176,6 +188,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         sig.rotation = a.get("rotation", {})              # lead-lag rotation timing (if primed by a fired leader)
         sig.market = mkt
         sig.response = a.get("response", {})
+        sig.bm = a.get("bm", {})
         build_decision_stack(sig, a)                       # doc 6: SO WHAT DO I DO NOW
         # cross-asset gate: defer NEW longs during liquidation ('data good but price falling' guard)
         deferred_long = bool(cross.get("defer_longs") and sig.direction == "long"

@@ -46,6 +46,7 @@ class TickerSignal:
     market_mode: str = "MIXED"
     flow: dict = field(default_factory=dict)
     response: dict = field(default_factory=dict)
+    bm: dict = field(default_factory=dict)   # BandarMetrics regime readout (idx)
     category: str = "WATCH"
     why_now: list = field(default_factory=list)
     whos_trapped: str = ""

@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build s55 — GCFIS layer (🧭 tab)")
+    st.caption("v40 · build s56 — GCFIS layer (🧭 tab)")
     st.divider()
     
     page = st.radio("Navigation", [

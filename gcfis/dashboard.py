@@ -79,6 +79,11 @@ def card_html(r: dict, deferred: bool = False) -> str:
     macro = (_chip("Quad", (mac.get("quad") or "—"), "#d29922") + _chip("Liq", mac.get("liquidity_regime"), "#d29922")
              + _chip("Frag", mac.get("fragility"), "#d29922") + _chip("Shock", mac.get("shock_prob"), "#d29922")
              + _chip("X-asset", mac.get("cross_asset_regime"), "#d29922"))
+    bm = r.get("bm") or {}
+    bm_chips = ((_chip("BM", bm.get("regime"), "#ff7b72") + _chip("EFD", bm.get("efd"), "#ff7b72")
+                 + _chip("ParF", bm.get("par_f"), "#ff7b72") + _chip("CorrF", bm.get("corr_f"), "#ff7b72")
+                 + _chip("LPM✓" if bm.get("lpm_valid") else "LPM✗", bm.get("flow_score"), "#ff7b72"))
+                if bm.get("regime") else "")
     fl = r.get("flow") or {}
     modeflow = (_chip("Mode", r.get("market_mode"), "#e3b341") + _chip("Mkt", r.get("market"), "#e3b341")
                 + (_chip("Flow", fl.get("type"), "#79c0ff") if fl.get("type") else "")
@@ -92,7 +97,7 @@ def card_html(r: dict, deferred: bool = False) -> str:
             f"<div style='margin-top:3px'>{scores}</div>"
             f"<div>{options}</div>"
             f"<div>{macro}</div>"
-            f"<div>{modeflow}</div>"
+            f"<div>{modeflow}{bm_chips}</div>"
             f"<div style='margin-top:2px'>{entry}{rotation_chip}{_chip('size×', r.get('alloc_mult'), '#8b949e') if r.get('alloc_mult',1)!=1 else ''}</div>"
             f"<div>📈 {scen}</div>"
             f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div>"

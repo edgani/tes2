@@ -261,11 +261,55 @@ def t_driver_map():
     assert all(v["bias"] == "NO_DATA" for v in nod.values())
     print(f"  DRIVER MAP: 6 markets | gold bias={g['bias']} score={g['score']} ({g['fed']} feeds) | no-data→NO_DATA (honest)  OK")
 
+def t_bm_flow_regime():
+    from gcfis.engines.flow_regime import FlowRegimeEngine, FlowRegimeConfig
+    def mk(n, ret_drift, fn_drift, par_level, seed):
+        rg = np.random.default_rng(seed)
+        ret = ret_drift + rg.normal(0, 0.012, n); close = 1000.0*np.exp(np.cumsum(ret))
+        high = close*(1+np.abs(rg.normal(0,0.006,n))); low = close*(1-np.abs(rg.normal(0,0.006,n)))
+        op = close*(1+rg.normal(0,0.004,n)); vol = rg.lognormal(15,0.4,n); tv = close*vol
+        fn = (fn_drift*tv)+rg.normal(0,0.05*tv.mean(),n); gross = par_level*2*tv
+        return pd.DataFrame({"close":close,"high":high,"low":low,"open":op,"volume":vol,
+                             "fb":(gross+fn)/2,"fs":(gross-fn)/2,"total_value":tv})
+    cfg = FlowRegimeConfig()
+    dom = FlowRegimeEngine(mk(400,+0.0018,-0.06,0.38,1),cfg).compute().dropna()   # 2025-IHSG: price UP, foreign SELL
+    fgn = FlowRegimeEngine(mk(400,-0.0016,-0.10,0.55,2),cfg).compute().dropna()   # BBCA: foreign-led decline
+    opr = FlowRegimeEngine(mk(400,+0.0020,+0.005,0.12,3),cfg).compute().dropna()  # HUMI: operator pump
+    assert dom["regime_name"].mode()[0]=="DOMESTIC_LED" and dom["flow_score"].median()>0
+    assert fgn["regime_name"].mode()[0]=="FOREIGN_LED" and fgn["flow_score"].median()<0
+    assert opr["regime_name"].mode()[0]=="OPERATOR"
+    print(f"  BM flow_regime: DOMESTIC_LED med={dom['flow_score'].median():.0f}(+) | FOREIGN_LED med={fgn['flow_score'].median():.0f}(−) | OPERATOR ok"
+          f" — foreign-sell-into-rally ≠ bearish  OK")
+def t_bm_idx_wiring_e2e():
+    r = np.random.default_rng(11)
+    strong = S(100*np.exp(np.cumsum(r.normal(0.004,0.012,N))))
+    vol = S(np.r_[r.normal(1e6,1e5,N-60), r.normal(1.6e6,1.5e5,60)])
+    # Type-F: domestic-led markup (foreign net sell into the rally)
+    tv = strong*vol; fn = -0.06*tv + pd.Series(r.normal(0,0.05*float(tv.mean()),N),index=tv.index)
+    gross = 0.38*2*tv
+    typef = pd.DataFrame({"close":strong,"high":strong*1.005,"low":strong*0.995,"open":strong,
+                          "volume":vol,"fb":(gross+fn)/2,"fs":(gross-fn)/2,"total_value":tv})
+    out = run_gcfis({"STR.JK":strong,"USX":strong.copy()}, bench, {"risk_on":0.85,"chop":0.15},
+                    theme_baskets={"AI":["USX","STR.JK"]},
+                    growth_inputs={"sox":S(np.cumsum(r.normal(0.02,0.1,N)))},
+                    infl_inputs={"breakeven":S(np.cumsum(r.normal(0,0.1,N)))},
+                    volumes={"STR.JK":vol,"USX":vol}, typef_by_ticker={"STR.JK":typef},
+                    bottleneck_nodes={"GPU":dict(scarcity=.9,demand_growth=.9,lead_time=.85,replace_diff=.9,pricing_power=.85,tickers=["USX","STR.JK"])})
+    a = out["per_ticker"]["STR.JK"]
+    assert a.get("bm",{}).get("regime") in ("DOMESTIC_LED","FOREIGN_LED","DECOUPLED","OPERATOR"), a.get("bm")
+    assert a.get("flow01") is not None and a["bm"]["regime"]=="DOMESTIC_LED", a["bm"]
+    rows = out["ranking"]["master_long"]+out["ranking"]["deferred_longs"]
+    jk = next((x for x in rows if x["ticker"]=="STR.JK"), None)
+    assert jk is not None and jk.get("bm",{}).get("regime")=="DOMESTIC_LED"
+    assert any("domestic" in w for w in jk.get("why_now",[])), jk.get("why_now")
+    print(f"  BM idx e2e: STR.JK regime={a['bm']['regime']} score={a['bm']['flow_score']} flow01={a['flow01']:.2f} "
+          f"| card carries BM + why_now mentions domestic markup  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e):
         fn()
     print("-"*84); print("ALL TESTS PASSED")
