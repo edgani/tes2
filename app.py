@@ -28,7 +28,7 @@ def _pick_card(p):
             f"padding:8px 12px;margin:6px 0;background:#0d1117'>"
             f"<span style='font-size:15px;font-weight:800'>{p['ticker']}</span> "
             f"<span style='color:{col};font-weight:800'>{p['side'].upper()}</span> "
-            f"<span style='color:#8b949e;font-size:12px'>conv {p['conviction']} · EV {p['ev']}% · RR {p['rr']} · {p['market']}</span>"
+            f"<span style='color:#8b949e;font-size:12px'>conv {p['conviction']} · EV {p['ev']}% · RR {p['rr']} · {p['market']}" + (f" · {p.get('stage')}" if p.get('stage') else '') + "</span>"
             f"{rs}<div style='color:#8b949e;font-size:11px;margin-top:3px'>entry {p['entry']} · stop {p['stop']} · target {p['target']}</div></div>")
 
 

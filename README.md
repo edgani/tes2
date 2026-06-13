@@ -22,3 +22,12 @@ engine output; swap in your universe + the feeds flip provenance to REAL.
 Mission Control (shock + crash + FINAL DESK) · Regime & Liquidity (FRED macro + internals) ·
 Narratives & Bottlenecks · Market Intelligence (per-market state tables) · Ticker Intelligence
 (thesis/positioning/execution) · Portfolio & Risk · Research Lab (validation gates + open items).
+
+## s-rebuild update: validated v40 engine library RESTORED into v2
+Earlier I wrongly dropped most engines doing a literal "from 0". Now v2 carries the full validated
+set (31 engines + regime_meta/decision_stack/contracts), import-resolved to the flat layout.
+The per-ticker verdict now uses accumulation (RS + adoption stage + crowding + velocity) and
+reflexivity — so flow_type's direction-blindness is fixed: it's one input, not the sole judge.
+Demo proof: PLTR/XLU → LONG (real RS + institutional stage); NVDA/BTC correctly HELD (retail-mania
++ exit_signal = don't chase top). Open flaw logged: ATR-based stops sometimes give RR<1 — sizing/
+target engine (entry.py) to be wired next. Engines mapped to ChatGPT audit in the chat.

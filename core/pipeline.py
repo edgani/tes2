@@ -17,6 +17,8 @@ from engines.market_mode import run_market_mode
 from engines.internals import run_internals, run_horizon
 from engines.surge import run_surge
 from engines.crash_bottom import run_crash_bottom
+from engines.accumulation import run_accumulation   # RS + adoption stage + crowding + velocity (dir context)
+from engines.reflexivity import run_reflexivity      # melt-up / runaway detector
 
 _CRYPTO = ("BTC", "ETH", "SOL", "USD-", "-USD", "USDT")
 _FX = ("USD", "EUR", "JPY", "GBP", "AUD", "=X")
@@ -53,38 +55,51 @@ def _levels(close: pd.Series):
 
 
 def _verdict(a: dict):
-    """Lean, transparent gating. Long needs constructive flow+mode+alignment & not parabolic;
-    short needs distribution/rejection. Everything else = WATCH. Returns verdict dict or None."""
+    """Direction-aware gating using the RICH engines (fixes flow_type direction-blindness):
+    long = positive alpha-RS + constructive flow/accumulation + aligned TFs + not parabolic;
+    short = distribution/rejection + negative trend. flow_type is one input, not the sole judge."""
     flow = (a.get("flow") or {}).get("type")
     mode = (a.get("market_mode") or {}).get("mode")
     align = float((a.get("horizon") or {}).get("alignment", 50) or 50)
     surge = float((a.get("surge") or {}).get("score", 50) or 50)
+    rs = float(a.get("alpha_rs") or 0.0)                 # relative strength vs bench (directional)
+    crowd = float(a.get("crowding", 50) or 50)
+    vel = float(a.get("adoption_velocity", 0) or 0)
+    runaway = bool(a.get("runaway"))
+    exit_sig = bool(a.get("exit_signal"))
+    sweet = bool(a.get("sweet_spot"))
+    accum = float(a.get("accum_score") or 0.0)
     px, lo, hi, atr = a["_lvl"]
     close = a["_close"]
+    trend60 = (px / float(close.iloc[-61]) - 1.0) if len(close) > 61 else 0.0
     reasons, side = [], None
 
-    # directional reality check (close vs 60-bar): flow_type is direction-blind on volume ramps,
-    # so a strongly trending name must not be handed the opposite-side verdict.
-    trend60 = (px / float(close.iloc[-61]) - 1.0) if len(close) > 61 else 0.0
-    bullish = flow in ("ACCUMULATION", "SHORT_COVERING") and align >= 55 and trend60 > -0.05
-    bearish = (flow in ("DISTRIBUTION", "PANIC_LIQUIDATION") or mode == "DISTRIBUTION") and trend60 < 0.03
+    # LONG: relative strength + (accumulation OR aligned uptrend) + not parabolic-exhausted
+    constructive = flow in ("ACCUMULATION", "SHORT_COVERING") or accum > 0.25 or (align >= 60 and trend60 > 0.03)
+    # fresh long: strong RS + constructive + NOT a late-stage exhausted top (exit_signal) + not parabolic
+    bullish = rs > 0.10 and constructive and trend60 > -0.03 and not runaway and not exit_sig
+    bearish = (flow in ("DISTRIBUTION", "PANIC_LIQUIDATION") or mode == "DISTRIBUTION") and trend60 < 0.0 and rs < 0.02
 
-    if a.get("market") == "idx":            # long-only universe
+    if a.get("market") == "idx":
         bearish = False
     if bullish and not bearish:
         side = "long"
-        if flow == "ACCUMULATION": reasons.append(f"persistent accumulation (abs {(a['flow'] or {}).get('absorption')})")
-        if flow == "SHORT_COVERING": reasons.append("short-covering tape — squeeze fuel")
-        reasons.append(f"multi-TF aligned {align:.0f}/100")
+        reasons.append(f"relative strength vs bench (alpha-RS {rs:+.2f})")
+        if flow == "ACCUMULATION": reasons.append(f"accumulation tape (abs {(a['flow'] or {}).get('absorption')})")
+        elif trend60 > 0.03: reasons.append(f"aligned uptrend ({trend60:+.0%} 60d, TF {align:.0f}/100)")
+        if sweet: reasons.append("uncrowded sweet-spot (Stage 2→3)")
+        if a.get("stage"): reasons.append(f"adoption stage: {a['stage']}")
+        if accum > 0.3: reasons.append(f"accumulation score {accum:+.2f}")
         if surge >= 62: reasons.append(f"surge pre-conditioning {surge:.0f}")
-        if mode in ("SQUEEZE", "EXPANSION"): reasons.append(f"market mode {mode}")
+        if crowd < 45: reasons.append(f"underowned (crowding {crowd:.0f})")
         entry, stop, target = round(px, 4), round(lo - 0.5 * atr, 4), round(px + 2.0 * atr, 4)
     elif bearish:
         side = "short"
         if flow == "DISTRIBUTION": reasons.append(f"distribution — volume w/o progress (eff {(a['flow'] or {}).get('efficiency')})")
         if flow == "PANIC_LIQUIDATION": reasons.append("panic liquidation tape")
         if mode == "DISTRIBUTION": reasons.append("market mode DISTRIBUTION")
-        reasons.append(f"multi-TF {align:.0f}/100")
+        reasons.append(f"negative RS ({rs:+.2f}) + downtrend ({trend60:+.0%} 60d)")
+        if runaway: reasons.append("reflexive blow-off risk")
         entry, stop, target = round(px, 4), round(hi + 0.5 * atr, 4), round(px - 2.0 * atr, 4)
     else:
         return None
@@ -94,11 +109,12 @@ def _verdict(a: dict):
     risk = abs(entry - stop); reward = abs(target - entry)
     if risk <= 0:
         return None
-    conv = float(np.clip(45 + 0.4 * (align - 50) + 0.25 * (surge - 50), 0, 100))
+    conv = float(np.clip(45 + 0.30 * (align - 50) + 0.20 * (surge - 50) + 30 * np.tanh(rs * 3), 0, 100))
     p = conv / 100.0
     ev = round(100.0 * (p * reward - (1 - p) * risk) / entry, 2)
     return {"side": side, "conviction": round(conv, 1), "ev": ev, "entry": entry, "stop": stop,
-            "target": target, "rr": round(reward / risk, 2), "reasons": reasons[:4],
+            "target": target, "rr": round(reward / risk, 2), "reasons": reasons[:5],
+            "stage": a.get("stage"), "crowding": round(crowd, 0),
             "invalidation": {"price": stop, "conditions": "close beyond stop"}}
 
 
@@ -116,8 +132,21 @@ def run_pipeline(prices: dict, bench=None, data_ctx: dict | None = None) -> dict
             continue
         a = {"ticker": tkr, "market": _market_of(tkr)}
         a["flow"] = run_flow_type(close, vol)
-        a["crowding"] = 50.0
-        a["market_mode"] = run_market_mode(close, flow=a["flow"], crowding=50.0)
+        acc = run_accumulation(tkr, close, bclose, volume=vol)         # RS/stage/crowding/velocity
+        a["accumulation"] = acc
+        a["crowding"] = float(acc.get("crowding", 50.0))
+        a["adoption_velocity"] = float(acc.get("adoption_velocity", 0.0))
+        a["stage"] = acc.get("stage")
+        a["alpha_rs"] = float(acc.get("rs") or 0.0)
+        a["accum_score"] = float(acc.get("accumulation") or 0.0)
+        a["exit_signal"] = bool(acc.get("exit_signal"))
+        a["sweet_spot"] = bool(acc.get("sweet_spot"))
+        refl = run_reflexivity(close, volume=vol)
+        a["reflexivity"] = refl.get("reflexivity")
+        a["runaway"] = refl.get("runaway")
+        a["acceleration"] = refl.get("price_accel")
+        a["market_mode"] = run_market_mode(close, flow=a["flow"], crowding=a["crowding"],
+                                           adoption_velocity=a["adoption_velocity"])
         a["horizon"] = run_horizon(close)
         a["_lvl"] = _levels(close)
         a["_close"] = close
