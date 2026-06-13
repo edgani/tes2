@@ -77,26 +77,46 @@ def main():
     with tabs[0]:
         st.subheader("Mission Control")
         _banner(ctx); st.divider()
+        from core.visuals import (compute_quad, quad_map_figure, stress_bar_html,
+                                  big_metric_html)
         shock = run_shock_engine(ctx.get("macro", {}), ctx.get("vix_term", {}), breadth=internals.get("breadth"))
-        cc = st.columns([1, 1, 2])
-        with cc[0]:
-            st.metric("SHOCK PRESSURE", shock["shock_prob"], shock["crash_type"]); st.caption(f"confidence: {shock['confidence']}")
-        with cc[1]:
-            st.metric("CRASH (cohort)", crash["pressure"], crash["type"]); st.caption(f"bottom: {crash['bottom']['state']}")
-        with cc[2]:
-            st.caption("shock basis: " + shock["basis"])
-            for k, v in shock["components"].items():
-                st.caption(f"{k}: {v:.2f} · {shock['provenance'][k]}")
+        qe = compute_quad(prices, ctx.get("macro", {}))
+
+        # ── HERO: Hedgeye quad (left, large) + risk stress bars (right) ──
+        hero_l, hero_r = st.columns([0.62, 0.38])
+        with hero_l:
+            st.markdown(f"#### 🧭 GIP Quad — **{qe['structural_quad']} · {qe['structural_name']}** "
+                        f"→ implied **{qe['where_it_goes']['implied_next']}**")
+            try:
+                st.plotly_chart(quad_map_figure(qe), use_container_width=True, config={"displayModeBar": False})
+            except Exception:
+                st.caption(f"quad: {qe['structural_quad']} {qe['structural_name']} (plotly unavailable)")
+            st.caption(f"GROC {qe['GROC']:+.2f} · IROC {qe['IROC']:+.2f} · {qe['provenance']}")
+        with hero_r:
+            scol = "#3fb950" if shock["shock_prob"] < 40 else "#d29922" if shock["shock_prob"] < 65 else "#f85149"
+            st.markdown(big_metric_html("Shock pressure", shock["shock_prob"],
+                                        f"{shock['crash_type']} · conf {shock['confidence']}", scol),
+                        unsafe_allow_html=True)
+            bars = "".join(stress_bar_html(k.replace("_", " "), v * 100, shock["provenance"][k])
+                           for k, v in shock["components"].items())
+            st.markdown(f"<div style='margin-top:8px'>{bars}</div>", unsafe_allow_html=True)
+            st.markdown(big_metric_html("Crash (cohort)", crash["pressure"],
+                                        f"{crash['type']} · {crash['bottom']['state']}"), unsafe_allow_html=True)
+        st.caption("shock basis: " + shock["basis"])
         st.divider()
+
+        # ── WHAT CHANGED (delta-lite) + FINAL DESK ──
         st.markdown(f"### 🎯 FINAL DESK — {len(picks)} cleared the quality gate")
-        st.caption(out["note"] + " · quality > quantity: only valid setups, no padding")
-        for p in picks[:10]:
-            st.markdown(_pick_card(p), unsafe_allow_html=True)
-        if not picks:
-            st.info("0 setups clear the gate on this universe. **Honest finding:** flow_type is "
-                    "direction-blind — it reads volume expansion as DISTRIBUTION even on strong uptrends "
-                    "(NVDA +33% → NEUTRAL, never ACCUMULATION). That is the #1 calibration fix queued next; "
-                    "verdicts are gated so it can't emit a wrong-side call meanwhile. This is a logic gap, not data.")
+        st.caption(out["note"] + " · quality > quantity, no padding")
+        if picks:
+            cols = st.columns(2)
+            for i, p in enumerate(picks[:10]):
+                with cols[i % 2]:
+                    st.markdown(_pick_card(p), unsafe_allow_html=True)
+        else:
+            st.info("0 setups clear the gate on this universe. The flow-classifier is direction-gated "
+                    "so it won't emit a wrong-side call; richer accumulation/RS staging drives the long "
+                    "side (see Research Lab for the open calibration item).")
 
     with tabs[1]:
         st.subheader("Regime & Liquidity")
@@ -134,14 +154,18 @@ def main():
                 st.caption({"us": "DNA: gamma/breadth/credit/semis-RS", "crypto": "DNA: liquidity/reflexivity/funding",
                             "fx": "DNA: rate differentials/DXY/carry", "commodity": "DNA: inventory/term-structure",
                             "idx": "DNA: foreign flow/LPM/participation (long-only)"}.get(m, ""))
-                st.markdown("| ticker | flow | mode | align | surge | verdict |\n|---|---|---|---|---|---|")
-                lines = []
-                for a in rows:
-                    vd = a.get("verdict")
-                    lines.append(f"| {a['ticker']} | {(a['flow'] or {}).get('type','—')} | "
-                                 f"{(a['market_mode'] or {}).get('mode','—')} | {(a['horizon'] or {}).get('alignment','—')} | "
-                                 f"{(a['surge'] or {}).get('score','—')} | {(vd['side'].upper() if vd else 'watch')} |")
-                st.markdown("\n".join(lines))
+                import pandas as _pd
+                tbl = _pd.DataFrame([{
+                    "ticker": a["ticker"],
+                    "flow": (a["flow"] or {}).get("type", "—"),
+                    "mode": (a["market_mode"] or {}).get("mode", "—"),
+                    "align": (a["horizon"] or {}).get("alignment", "—"),
+                    "surge": (a["surge"] or {}).get("score", "—"),
+                    "stage": a.get("stage", "—"),
+                    "RS": (round(a["alpha_rs"], 2) if a.get("alpha_rs") is not None else "—"),
+                    "verdict": (a["verdict"]["side"].upper() if a.get("verdict") else "watch"),
+                } for a in rows])
+                st.dataframe(tbl, use_container_width=True, hide_index=True)
 
     with tabs[4]:
         st.subheader("Ticker Intelligence — thesis / positioning / execution")
