@@ -266,6 +266,13 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True, setup=None
                                text=_right, showarrow=False, align="left",
                                font={"size": 8.5, "color": "#b9c2cc"},
                                bgcolor="rgba(13,17,23,0.70)", bordercolor="#30363d", borderwidth=1, borderpad=4)
+    if not (strikes and gexvals and len(strikes) == len(gexvals)):
+        # no options chain → render as a clean horizontal LEVEL LADDER instead of an empty GEX plane
+        fig.update_layout(height=200, yaxis={"visible": False, "range": [-0.7, 0.7]})
+        fig.add_annotation(xref="paper", yref="paper", x=1.0, y=1.05, xanchor="right",
+                           text="level ladder — no options chain", showarrow=False,
+                           font={"size": 9, "color": "#8b949e"})
+
     return fig
 
 
@@ -326,6 +333,31 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     overlay (secondary axis) / Intensity panel / Vol Rotation panel."""
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
+    sr = (bm or {}).get("series_real")
+    if sr and sr.get("index"):
+        from plotly.subplots import make_subplots
+        import plotly.graph_objects as go
+        ix, cl = sr["index"], sr["close"]
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.58, 0.21, 0.21],
+                            vertical_spacing=0.04, specs=[[{"secondary_y": True}], [{}], [{}]],
+                            subplot_titles=(f"Price + LPM + Foreign Flow (REAL Type-F · Corr_F {bm.get('corr_f','—')} · Par_F {bm.get('par_f','—')})",
+                                            "Intensity (trigger-only)", "Net Buy/Sell F (Rp)"))
+        fig.add_trace(go.Scatter(x=ix, y=cl, mode="lines", name="Close",
+                                 line={"color": "#c9d1d9", "width": 1.3}), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=ix, y=sr["lpm"], mode="lines", name="LPM",
+                                 line={"color": "#2dd4bf", "width": 1.4}), row=1, col=1, secondary_y=True)
+        fig.add_trace(go.Scatter(x=ix, y=sr["ff_cum"], mode="lines", name="Foreign Flow (cum)",
+                                 line={"color": "#58a6ff", "width": 1.2}), row=1, col=1, secondary_y=True)
+        fig.add_trace(go.Bar(x=ix, y=sr["intensity"], marker_color="#a371f7", name="Intensity"), row=2, col=1)
+        nf = sr["ff_net"]
+        fig.add_trace(go.Bar(x=ix, y=nf, name="NetF",
+                             marker_color=["#26a69a" if (v or 0) >= 0 else "#ef5350" for v in nf]), row=3, col=1)
+        fig.update_layout(height=460, showlegend=True,
+                          legend={"orientation": "h", "y": 1.06, "x": 0, "font": {"size": 9}},
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,17,23,0.6)",
+                          font={"color": "#c9d1d9", "size": 10}, margin={"t": 42, "b": 18, "l": 50, "r": 50},
+                          bargap=0.15)
+        return fig
     s = (bm or {}).get("series") or {}
     idx = s.get("index"); o, h, l, c = s.get("open"), s.get("high"), s.get("low"), s.get("price")
     lpm, inten, rot = s.get("lpm"), s.get("intensity"), s.get("rotation")
@@ -333,7 +365,7 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
         return None
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.74, 0.26],
                         vertical_spacing=0.04, specs=[[{"secondary_y": True}], [{}]],
-                        subplot_titles=("Price + LPM (conditional — valid only w/ liq-expansion + breadth)", "Intensity (trigger-only)"))
+                        subplot_titles=("Price + LPM (PROXY — Type-F absent; conditional)", "Intensity (trigger-only)"))
     # candlesticks
     fig.add_trace(go.Candlestick(x=idx, open=o, high=h, low=l, close=c, name="Price",
                                  increasing_line_color="#26a69a", decreasing_line_color="#ef5350",

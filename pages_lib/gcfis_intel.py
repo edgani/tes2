@@ -96,12 +96,18 @@ def _quad_posterior(sq, mq):
     return post or {"chop": 1.0}
 
 def _regime_posterior(snap, prices, bench):
+    _hint = None
+    try:
+        _sq, _mq = _quads(snap)
+        _hint = _mq or _sq
+    except Exception:
+        _hint = None
     """REAL Gaussian HMM fitted at runtime on bench returns + breadth + VIX; fallback to quad lookup."""
     try:
         from gcfis.engines.regime_hmm import run_regime_hmm
         r = np.log(bench).diff()
         vixs = _find(prices, _VIX)
-        hm = run_regime_hmm(r, n_states=5, breadth=_breadth(prices), vix=vixs)
+        hm = run_regime_hmm(r, n_states=5, breadth=_breadth(prices, gip_hint=_hint), vix=vixs)
         if hm.get("ok") and hm.get("posterior"):
             return hm["posterior"], hm.get("method", "hmm")
     except Exception:

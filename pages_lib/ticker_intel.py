@@ -92,12 +92,16 @@ def render(snap):
     sc = r.get("scores") or {}
     meta_dir = sc.get("meta_long") if d != "short" else sc.get("meta_short")
     gexs = dl.get("gex_sign")
-    rows = [("Macro/regime", meta_dir), ("Liquidity", round(num((out.get('systemic') or {}).get("liquidity"), 50), 0)),
+    rows = [("Macro/regime", meta_dir), ("Liquidity", round(num((out.get('systemic_flat') or out.get('systemic') or {}).get("liquidity"), 50), 0)),
             ("Dealer", {1: 70, -1: 30}.get(gexs, "—") if gexs is not None else "—"),
             ("Flow", round(100 * float(a.get("flow01", 0.5) or 0.5), 0)),
             ("Narrative", 60 if a.get("theme") else 40),
             ("Horizon", (a.get("horizon") or {}).get("alignment", "—"))]
-    st.markdown("| layer | score |\n|---|---|\n" + "\n".join(f"| {k} | {v} |" for k, v in rows))
+    _num_rows = [(k, float(v)) for k, v in rows if isinstance(v, (int, float))]
+    from components.mini_viz import hbar
+    if not (_num_rows and hbar(st, "", [k for k, _ in _num_rows], [v for _, v in _num_rows],
+                               colors=["#58a6ff"] * len(_num_rows), fmt="{:.0f}")):
+        st.markdown("| layer | score |\n|---|---|\n" + "\n".join(f"| {k} | {v} |" for k, v in rows))
     key = {"commodity": ("gold" if "XAU" in str(tkr).upper() or "GOLD" in str(tkr).upper() else "oil"),
            "fx": "fx", "idx": "idx", "crypto": "crypto"}.get(mkt, "us")
     dd = (out.get("drivers") or {}).get(key) or {}

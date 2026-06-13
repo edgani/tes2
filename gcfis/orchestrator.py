@@ -130,6 +130,14 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                 from .engines.flow_regime import FlowRegimeEngine
                 bm = FlowRegimeEngine(typef_by_ticker[tkr]).latest()
                 a["bm"] = bm
+                try:
+                    _pf = bm.compute().tail(260)
+                    a["bm"]["series_real"] = {"index": [d.strftime("%Y-%m-%d") for d in _pf.index],
+                        "close": [float(x) for x in _pf["close_px"]], "lpm": [float(x) for x in _pf["lpm"]],
+                        "ff_cum": [float(x) for x in _pf["ff_cum"]], "ff_net": [float(x) for x in _pf["ff_net"]],
+                        "intensity": [float(x) for x in _pf["intensity"]]}
+                except Exception:
+                    pass
                 a["flow01"] = float(np.clip(0.5 + (bm["flow_score"] / 200.0) * bm["confidence"], 0.0, 1.0))
                 if a.get("broker_sign", 0) == 0:
                     a["broker_sign"] = 1 if bm["flow_score"] > 20 else -1 if bm["flow_score"] < -20 else 0
@@ -244,7 +252,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     for _t, _a in per_ticker.items():
         _a["surge"] = run_surge(_a, systemic, internals)
     crash = run_crash_bottom(systemic, internals, per_ticker)
-    return {"ok": True, "drivers": drivers, "internals": internals, "crash": crash,
+    return {"ok": True, "drivers": drivers, "internals": internals, "crash": crash, "systemic_flat": systemic,
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],

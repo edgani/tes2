@@ -56,6 +56,9 @@ class FlowRegimeEngine:
         adv_l = c["total_value"].rolling(cfg.adv_long, min_periods=cfg.adv_long // 2).mean()
         out["liq_expand"] = adv_s / adv_l
         out["breadth"] = np.sign(pressure).rolling(cfg.persist_n, min_periods=2).mean()
+        out["ff_net"] = fn
+        out["ff_cum"] = fn.cumsum()
+        out["close_px"] = c["close"]
         out["lpm_valid"] = ((out["lpm_slope_z"] > 0) & (out["liq_expand"] > 1.0) & (out["breadth"] > 0)).astype(int)
         zint = _z(_slope(out["lpm"], cfg.slope_k), cfg.z_n).abs()
         out["intensity"] = np.where(zint > 1.5, zint, 0.0)

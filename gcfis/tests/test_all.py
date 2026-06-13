@@ -372,11 +372,41 @@ def t_surge_crash():
     assert cb["pressure"] <= 40 and cb["bottom"]["state"] == "DURABLE_BOTTOM_FORMING", cb
     print(f"  SURGE/CRASH: surge hi={s_hi['score']} lo={s_lo['score']} | crash {cr['pressure']} {cr['type']} | bottom {cb['bottom']['state']} (p={cb['pressure']})  OK")
 
+def t_feeds_parsers():
+    from gcfis.feeds.fred_feed import parse_fredgraph_csv, build_series
+    csv = "DATE,WALCL,WTREGEN,RRPONTSYD,DFII10\n2026-01-02,6900000,750,250,2.10\n2026-01-09,6890000,760,240,.\n2026-01-16,6880000,740,260,2.05\n"
+    df = parse_fredgraph_csv(csv); ser = build_series(df)
+    assert "FEDLIQ" in ser and "TIPS10Y" in ser
+    nl = ser["FEDLIQ"]
+    assert abs(nl.iloc[0] - (6900000/1000 - 750 - 250)) < 1e-6, nl.iloc[0]      # $bn math
+    tips = ser["TIPS10Y"]
+    assert len(tips) == 3 and abs(tips.iloc[1] - 2.10) < 1e-9                    # "." → ffilled level
+    from gcfis.feeds.typef_idx import parse_stock_summary
+    j1 = '{"data":[{"StockCode":"BREN","OpenPrice":4070,"High":4270,"Low":4060,"Close":4080,"Volume":51411300,"Value":212000000000,"ForeignBuy":80000000000,"ForeignSell":77500000000}]}'
+    j2 = '{"data":[{"stockCode":"TPIA","open":1835,"high":1960,"low":1820,"close":1850,"volume":1305429500,"value":2400000000000,"foreignBuy":900000000000,"foreignSell":905000000000}]}'
+    d1 = parse_stock_summary(j1, "20260612"); d2 = parse_stock_summary(j2, "20260612")
+    assert len(d1) == 1 and d1.iloc[0]["fb"] == 80000000000 and d1.iloc[0]["code"] == "BREN"
+    assert len(d2) == 1 and d2.iloc[0]["fs"] == 905000000000, d2.to_dict()
+    # adapter → FlowRegimeEngine contract smoke (synthetic 200d, REQUIRED satisfied, latest() runs)
+    from gcfis.engines.flow_regime import FlowRegimeEngine
+    r = np.random.default_rng(5); n = 200
+    ix = pd.bdate_range("2025-06-01", periods=n)
+    close = pd.Series(1000*np.exp(np.cumsum(r.normal(0.0005, 0.015, n))), index=ix)
+    vol = pd.Series(r.normal(5e7, 5e6, n).clip(1e6), index=ix)
+    val = close*vol
+    fb = pd.Series((0.3+0.1*r.random(n)), index=ix)*val
+    fs = pd.Series((0.3+0.1*r.random(n)), index=ix)*val
+    df = pd.DataFrame({"open": close.shift(1).fillna(close), "high": close*1.01, "low": close*0.99,
+                       "close": close, "volume": vol, "fb": fb, "fs": fs, "total_value": val})
+    eng = FlowRegimeEngine(df); last = eng.latest(); prim = eng.compute()
+    assert "ff_cum" in prim.columns and "close_px" in prim.columns and -100 <= last["flow_score"] <= 100
+    print(f"  FEEDS: FRED NetLiq={nl.iloc[0]:.0f}bn ok | IDX parser 2 casings ok | typef→engine smoke regime={last['regime']}  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon,t_no_blanket_short,t_surge_crash):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon,t_no_blanket_short,t_surge_crash,t_feeds_parsers):
         fn()
     print("-"*84); print("ALL TESTS PASSED")

@@ -195,7 +195,7 @@ def card_scan_html(r) -> str:
             f"background:#0d1117;border-radius:6px'>"
             f"<span style='font-weight:700;font-size:15px'>{r.get('ticker')}</span> "
             f"<span style='color:{col};font-weight:700'>{act}</span> "
-            f"<span style='color:#8b949e;font-size:12px'>{bits}</span>"
+            f"<span style='color:#8b949e;font-size:12px;white-space:nowrap'>{bits}</span>"
             f"<div style='color:#8b949e;font-size:11px;margin-top:2px'>{ftype} · mode {r.get('market_mode','—')}"
             + (f" — {why}" if why else "") + "</div>"
             f"<details style='margin-top:4px'><summary style='cursor:pointer;color:#58a6ff;font-size:11px'>"

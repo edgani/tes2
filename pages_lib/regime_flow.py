@@ -30,8 +30,14 @@ def render(snap: dict):
         with st.expander("🔀 relative & internals (doc-12: relative > absolute)"):
             if intern.get("breadth") is not None:
                 st.caption(f"breadth (>50dma): {intern['breadth']:.0%} · top-5 share of +returns: {intern.get('top5_share','—')}")
-            for pr in intern.get("pairs", []):
-                st.markdown(f"`{pr['pair']}` z20 **{pr['z20']:+.2f}** — {pr['note']}")
+            prs = intern.get("pairs", [])
+            from components.mini_viz import hbar
+            if prs and hbar(st, "relative pairs (z20 of 20d ratio-change)",
+                            [x["pair"] for x in prs], [x["z20"] for x in prs], fmt="{:+.2f}"):
+                for pr in prs: st.caption(f"`{pr['pair']}` — {pr['note']}")
+            else:
+                for pr in prs:
+                    st.markdown(f"`{pr['pair']}` z20 **{pr['z20']:+.2f}** — {pr['note']}")
             for d in intern.get("divergences", []): st.warning(d)
     ll = out.get("leadlag") or {}
     with st.expander("🕸 capital-flow lead–lag (discovered, not hardcoded)"):

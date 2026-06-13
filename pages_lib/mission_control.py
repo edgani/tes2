@@ -12,13 +12,13 @@ def render(snap):
         st.error("GCFIS output unavailable — click Rebuild."); return
     rank = out.get("ranking", {}) or {}
     per = out.get("per_ticker", {}) or {}
-    sysf = out.get("systemic") or {}
+    sysf = out.get("systemic_flat") or out.get("systemic") or {}
     crash = out.get("crash") or {}
     gip = (snap or {}).get("gip")
     sq = getattr(gip, "structural_quad", "—"); mq = getattr(gip, "monthly_quad", "—")
     cross = (sysf.get("cross_asset") or out.get("cross_asset") or {})
     xreg = cross.get("regime", "MIXED")
-    rmethod = out.get("regime_method") or (out.get("regime") or {}).get("method", "—")
+    rmethod = out.get("_regime_method") or out.get("regime_method") or "—"
     liq = num(sysf.get("liquidity"), 50); frag = num(sysf.get("fragility"), 50)
     shock = num(sysf.get("shock_prob"), 50)
     crowd_avg = (sum(float(a.get("crowding", 50) or 50) for a in per.values()) / max(len(per), 1)) if per else 50.0
@@ -31,6 +31,7 @@ def render(snap):
     st.markdown(f"## 🌍 {sq} structural · {mq} monthly — cross-asset **{xreg}**"
                 + (f" · ⚠ crash-type **{ctype}**" if ctype not in ("LOW", None) else ""))
     st.caption(f"regime engine: {rmethod} · crash basis: {crash.get('basis','—')}")
+    for fs_ in (out.get("_feeds_status") or []): st.caption("📡 " + str(fs_))
     # ---- macro strip ----
     st.caption(f"LIQ {liq:.0f} · FRAG {frag:.0f} · SHOCK {shock:.0f} · CROWD {crowd_avg:.0f}"
                + (f" · BREADTH {breadth:.0%}" if breadth is not None else "")
@@ -48,6 +49,8 @@ def render(snap):
                     and r not in longs],
                    key=lambda r: -(r.get("surge") or 0))
     hedge = rank.get("deferred_longs", []) + (rank.get("sections", {}) or {}).get("distribution_warning", [])
+    _seen = {r.get("ticker") for r in longs + shorts}
+    hedge = [r for r in hedge if r.get("ticker") not in _seen]
 
     def _evkey(r): return (0 if r.get("entry_valid") else 1, -(r.get("ev") if r.get("ev") is not None else -999))
     colMain, colFrag = st.columns([3, 1])
@@ -74,8 +77,11 @@ def render(snap):
     with colFrag:
         st.markdown("### 🧱 Fragility stack")
         st.metric("CRASH PRESSURE", f"{crash.get('pressure','—')}", ctype)
-        for k, v in (crash.get("components") or {}).items():
-            st.caption(f"{k}: {v:.2f}")
+        comps = crash.get("components") or {}
+        from components.mini_viz import hbar
+        if comps and not hbar(st, "crash components", list(comps), list(comps.values()),
+                              colors=["#f0883e"] * len(comps), fmt="{:.2f}"):
+            for k, v in comps.items(): st.caption(f"{k}: {v:.2f}")
         bt = (crash.get("bottom") or {})
         st.caption(f"bottom: **{bt.get('state','—')}** ({bt.get('score','—')}/100)")
         st.caption(f"deferred {len(rank.get('deferred_longs', []))} · eliminated {len(rank.get('eliminated', []))}")

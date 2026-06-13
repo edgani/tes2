@@ -67,12 +67,39 @@ def get_gcfis_output(snap: dict, st):
                       "VIX": gi._VIX, "USDIDR": ["USDIDR","IDR=X","USDIDR=X"]}.items():
             s = gi._find(prices, al)
             if s is not None: drv[k] = s
+        feeds_status = []
+        try:                                                   # REAL FRED: NetLiq + 10Y TIPS (level series)
+            fr = None
+            if hasattr(st, "session_state"):
+                fr = st.session_state.get("_fred_feed")
+            if fr is None:
+                from gcfis.feeds.fred_feed import fetch_fred
+                fr = fetch_fred()
+                if hasattr(st, "session_state"): st.session_state["_fred_feed"] = fr
+            fser, fstat = fr
+            drv.update(fser)                                   # FEDLIQ + TIPS10Y override price proxies
+            feeds_status.append(fstat)
+        except Exception as e:
+            feeds_status.append(f"fred: error {type(e).__name__}")
+        typef = None
+        try:                                                   # REAL Type-F from IDX daily summary (per-day cached)
+            if any(str(k).upper().endswith(".JK") for k in prices):
+                tf = st.session_state.get("_typef_feed") if hasattr(st, "session_state") else None
+                if tf is None:
+                    from gcfis.feeds.typef_idx import build_typef
+                    tf = build_typef(list(prices), days=120)
+                    if hasattr(st, "session_state"): st.session_state["_typef_feed"] = tf
+                typef, tstat = tf
+                feeds_status.append(tstat)
+        except Exception as e:
+            feeds_status.append(f"typef: error {type(e).__name__}")
         out = run_gcfis(prices, bench, posterior,
                         systemic_inputs=gi._systemic_inputs(prices, bench) or None,
                         cross_asset_snapshot=gi._cross_snapshot(prices) or None,
                         volumes=volumes or None, dealer_by_ticker=gi._dealer_by_ticker(snap, prices) or None,
-                        driver_data=drv or None)
+                        driver_data=drv or None, typef_by_ticker=typef or None)
         out["_regime_method"] = method
+        out["_feeds_status"] = feeds_status
         try:
             sq, mq = gi._quads(snap)
             if sq: out.setdefault("systemic", {}).setdefault("forward_macro", {})["forward_quad"] = sq

@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build s57 — 6-tab causal OS (final design)")
+    st.caption("v40 · build s59 — real feeds (Type-F IDX + FRED NetLiq)")
     st.divider()
     
     page = st.radio("Navigation", [
