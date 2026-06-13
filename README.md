@@ -39,3 +39,14 @@ target engine (entry.py) to be wired next. Engines mapped to ChatGPT audit in th
 - BandarMetrics: core/bandarmetrics.py + calibrate() harness reverse-engineers BM's exact convention
   from your reference numbers. See BANDARMETRICS_REVERSE_ENGINEERING.md. Proven on synthetic
   (recovered hidden window exactly). Final exact-match needs your TPIA/BREN export (IDX blocked here).
+
+## live-data fix (root cause of permanent "DEMO universe")
+- core/live_data.py ADDED: fetches real OHLCV via Yahoo chart endpoint (Stooq fallback). The app
+  never had a live price loader — that's why it always showed DEMO. Now it tries LIVE first;
+  demo is a labeled fallback only.
+- FRED fixed: no longer caches failures (a cold-start timeout used to poison the whole session),
+  timeout 20→30s, '🔄 Reload live data' button to force refetch.
+- Sandbox blocks Yahoo/FRED so it still shows DEMO HERE; on Streamlit Cloud the banner flips to
+  "🟢 LIVE — N/12 loaded" and engines run on real prices + FRED credit/NetLiq turns REAL.
+- Verify on deploy: top banner says LIVE (not DEMO) and FINAL DESK shows your real tickers.
+  If FRED still times out, click Reload (the failure is no longer cached).

@@ -40,9 +40,21 @@ def main():
     from core.data_layer import build_data_context
     from core.pipeline import run_pipeline, demo_universe
     from engines.shock_engine import run_shock_engine
+    from core.live_data import fetch_prices, DEFAULT_UNIVERSE
+
+    if st.sidebar.button("🔄 Reload live data"):
+        for k in ("_snap", "_v2_fred", "_v2_vix", "_price_status"):
+            st.session_state.pop(k, None)
 
     snap = st.session_state.get("_snap")
     prices = (snap or {}).get("prices") if snap else None
+    if not prices:                                  # try LIVE before falling back to demo
+        live, pstatus = fetch_prices(DEFAULT_UNIVERSE)
+        st.session_state["_price_status"] = pstatus
+        if live:
+            prices = live
+            st.session_state["_snap"] = {"prices": live}
+    pstatus = st.session_state.get("_price_status", [])
     is_demo = not prices
     if is_demo:
         prices = demo_universe()
@@ -52,8 +64,12 @@ def main():
     per, picks, internals, crash = out["per_ticker"], out["picks"], out["internals"], out["crash"]
 
     if is_demo:
-        st.warning("⚠ DEMO universe (sandbox blocks live feeds). Engine output below is REAL on this "
-                   "synthetic data; deploy to Cloud + provide your universe for live results.")
+        st.warning("⚠ DEMO universe — live price fetch returned nothing in THIS environment "
+                   "(sandbox blocks Yahoo/FRED). On Streamlit Cloud this loads real OHLCV and the "
+                   "banner flips to LIVE. Status: " + (pstatus[0] if pstatus else "n/a"))
+    else:
+        st.success(f"🟢 LIVE — {pstatus[0] if pstatus else 'real prices loaded'}. "
+                   "Use '🔄 Reload live data' (sidebar) to refresh.")
 
     tabs = st.tabs(["🛰 Mission Control", "🌊 Regime & Liquidity", "🧬 Narratives & Bottlenecks",
                     "🗺 Market Intelligence", "🔬 Ticker Intelligence", "📊 Portfolio & Risk", "🧪 Research Lab"])

@@ -41,7 +41,7 @@ def _parse_fred(text: str) -> pd.DataFrame:
     return df.sort_index()
 
 
-def fetch_fred(timeout: int = 20):
+def fetch_fred(timeout: int = 30):
     """→ (df, status). Graceful on any failure (returns empty df + reason)."""
     try:
         url = _FRED_CSV.format(ids=",".join(FRED_SERIES))
@@ -122,12 +122,12 @@ def build_data_context(prices: dict, session=None) -> dict:
 
     cache = session.session_state if (session is not None and hasattr(session, "session_state")) else None
 
-    # FRED macro (+credit)
+    # FRED macro (+credit) — only cache SUCCESS so a transient timeout doesn't poison the session
     fr = cache.get("_v2_fred") if cache is not None else None
-    if fr is None:
-        df, st = fetch_fred()
+    if not fr or not fr[0]:                       # no cached success → (re)fetch
+        df, st = fetch_fred(timeout=30)
         fr = (derive_macro(df), st)
-        if cache is not None:
+        if cache is not None and fr[0]:           # cache ONLY when real series came back
             cache["_v2_fred"] = fr
     ctx["macro"], st = fr
     ctx["status"].append(st)
