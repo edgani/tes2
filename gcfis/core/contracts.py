@@ -47,6 +47,8 @@ class TickerSignal:
     flow: dict = field(default_factory=dict)
     response: dict = field(default_factory=dict)
     bm: dict = field(default_factory=dict)   # BandarMetrics regime readout (idx)
+    ev: float | None = None                  # expected value %: p·reward − (1−p)·risk (p=conv/100)
+    surge: float | None = None               # doc-20 pre-conditioning score (priors)
     category: str = "WATCH"
     why_now: list = field(default_factory=list)
     whos_trapped: str = ""

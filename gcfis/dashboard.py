@@ -46,7 +46,7 @@ def _stack_block(r: dict) -> str:
             f"🪤 {r.get('whos_trapped','')}<br>"
             f"▶ {ex.get('mode','-')} · aggression {ex.get('aggression','-')} · size×{ex.get('size_x','-')} · "
             f"targets {tg.get('near','-')} → {tg.get('expansion','-')} → {tg.get('convex','-')}<br>"
-            f"✋ invalid: {conds} (px {inv.get('price','-')})</div>")
+            f"✋ invalid: {conds} (px {inv.get('price') or '—'})</div>")
 
 
 def card_html(r: dict, deferred: bool = False) -> str:
@@ -89,7 +89,8 @@ def card_html(r: dict, deferred: bool = False) -> str:
                 + (_chip("Flow", fl.get("type"), "#79c0ff") if fl.get("type") else "")
                 + _chip("abs", fl.get("absorption"), "#79c0ff") + _chip("eff", fl.get("efficiency"), "#79c0ff")
                 + (_chip("⚠proxy", "OHLCV", "#57606a") if fl.get("proxy") else ""))
-    entry = _chip("Entry", format_entry(r), "#3fb950")
+    entry = _chip("Entry", ("—" if r.get("action") == "AVOID" else format_entry(r)), "#3fb950")
+    ev_chip = _chip("EV%", r.get("ev"), "#3fb950") if r.get("ev") is not None else ""
     scen = (_chip("bear", opp.get("bear"), "#cf222e") + _chip("base", opp.get("base"), "#8b949e")
             + _chip("bull", opp.get("bull"), "#1a7f37") + _chip("super", opp.get("supercycle"), "#1a7f37"))
     return (f"<div style='border-left:3px solid {col};padding:.45rem .7rem;margin:.35rem 0;background:#0f1117'>"
@@ -98,7 +99,7 @@ def card_html(r: dict, deferred: bool = False) -> str:
             f"<div>{options}</div>"
             f"<div>{macro}</div>"
             f"<div>{modeflow}{bm_chips}</div>"
-            f"<div style='margin-top:2px'>{entry}{rotation_chip}{_chip('size×', r.get('alloc_mult'), '#8b949e') if r.get('alloc_mult',1)!=1 else ''}</div>"
+            f"<div style='margin-top:2px'>{entry}{ev_chip}{rotation_chip}{_chip('size×', r.get('alloc_mult'), '#8b949e') if r.get('alloc_mult',1)!=1 else ''}</div>"
             f"<div>📈 {scen}</div>"
             f"<div style='color:#8b949e;font-size:.78rem;margin-top:3px'>{r.get('reason','')}</div>"
             f"{_stack_block(r)}</div>")
@@ -164,7 +165,7 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
     if drv:
         with st.expander("📡 Market Driver Map — surge-up / surge-down per market (researched Jun-2026)"):
             for mkt, dd in drv.items():
-                bias = dd.get("bias"); col = "#1a7f37" if bias == "LONG" else "#cf222e" if bias == "SHORT" else "#57606a"
+                bias = dd.get("bias"); col = "#1a7f37" if bias == "LONG" else "#cf222e" if bias == "SHORT" else "#9a6700" if str(bias).startswith("LEAN") else "#57606a"
                 st.markdown(f"**{mkt.upper()}** — bias <span style='color:{col}'>{bias}</span>"
                             f"{' (score ' + str(dd.get('score')) + ', ' + str(dd.get('fed')) + ' feeds live)' if dd.get('score') is not None else ' — wire feeds to activate'}",
                             unsafe_allow_html=True)
@@ -178,3 +179,24 @@ def render_gcfis_dashboard(out: dict, st=None, title: str = "GCFIS"):
     with st.expander("lead–lag (discovered)"):
         ll = out.get("leadlag", {})
         st.json(ll if ll.get("ok") else {"note": "need >=2 tickers / pairs"})
+
+
+def card_scan_html(r) -> str:
+    """Doc-15 scan-first card: one headline + one context line; full card behind <details>."""
+    act = r.get("action", "—"); d = r.get("direction", "")
+    col = "#3fb950" if d == "long" else "#f85149" if d == "short" else "#8b949e"
+    conv = r.get("conviction"); ev = r.get("ev"); surge = r.get("surge")
+    ftype = (r.get("flow") or {}).get("type") or "—"
+    why = (r.get("why_now") or [""])[0]
+    bits = f"conv {conv}"
+    if ev is not None: bits += f" · EV {ev}%"
+    if surge is not None: bits += f" · surge {surge}"
+    return (f"<div style='border-left:3px solid {col};padding:6px 10px;margin:6px 0;"
+            f"background:#0d1117;border-radius:6px'>"
+            f"<span style='font-weight:700;font-size:15px'>{r.get('ticker')}</span> "
+            f"<span style='color:{col};font-weight:700'>{act}</span> "
+            f"<span style='color:#8b949e;font-size:12px'>{bits}</span>"
+            f"<div style='color:#8b949e;font-size:11px;margin-top:2px'>{ftype} · mode {r.get('market_mode','—')}"
+            + (f" — {why}" if why else "") + "</div>"
+            f"<details style='margin-top:4px'><summary style='cursor:pointer;color:#58a6ff;font-size:11px'>"
+            f"detail</summary>{card_html(r)}</details></div>")

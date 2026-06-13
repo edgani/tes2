@@ -28,39 +28,51 @@ def _category(sig, a, mode):
 
 def _why_now(sig, a):
     w = []
-    f = a.get("flow") or {}
+    f = a.get("flow") or {}; rz = a.get("response") or {}; bm = a.get("bm") or {}
+    bearish = sig.direction == "short" or sig.category in ("DISTRIBUTION_SHORT", "REDUCE_AVOID")
+    if bearish:                                        # ONLY bearish evidence may justify a short/avoid
+        if f.get("type") == "DISTRIBUTION": w.append(f"volume climax with NO price progress (eff {f.get('efficiency')}) — inventory unloading")
+        if f.get("type") == "PANIC_LIQUIDATION": w.append("panic tape — forced selling in control")
+        if rz.get("response") == "REJECTION": w.append("rejection at upper band — breakout buyers trapped above")
+        if rz.get("response") == "NO_BID_CONTINUATION": w.append("no bid at the band — lower band is a waypoint, not support")
+        crowd = float(a.get("crowding", 50) or 50); vel = float(a.get("adoption_velocity", 0) or 0)
+        if crowd > 80 and vel < 0: w.append(f"late-stage crowding ({crowd:.0f}) with fading velocity — unwind fuel")
+        if a.get("exit_signal"): w.append("stage rollover / exit signal fired")
+        if (a.get("market_mode") or {}).get("mode") == "DISTRIBUTION": w.append("market mode DISTRIBUTION — upside reactions weak")
+        if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) < -20: w.append("foreign-led distribution — do not fade the foreign tape")
+        if a.get("_short_conflict"): w.append("⚠ conflicting tape (accumulation/reclaim present) — short is regime-driven, conviction haircut applied")
+        return w[:4] or ["regime tilt short + per-ticker distribution evidence"]
     if f.get("type") == "ACCUMULATION": w.append(f"persistent accumulation (absorption {f.get('absorption')}, persistence {f.get('persistence')})")
     if f.get("type") == "SHORT_COVERING": w.append("violent short-covering tape — squeeze propagating")
     if f.get("type") == "PANIC_LIQUIDATION": w.append("panic climax, low is in (sellers exhausted)")
-    if f.get("type") == "DISTRIBUTION": w.append("volume climax with NO price progress — inventory unloading")
     if a.get("rotation"): w.append(f"rotation-primed by {a['rotation'].get('leader')} (~{a['rotation'].get('window')}d window)")
     if a.get("runaway"): w.append("reflexive runaway loop (price×flow accelerating)")
     if a.get("sweet_spot"): w.append("uncrowded sweet-spot (Stage 2→3 adoption)")
     if a.get("bottleneck_node"): w.append(f"supply-chain bottleneck: {a['bottleneck_node']}")
     if a.get("broker_verdict") == "NET_ACCUMULATION": w.append("smart-money net buying (broker flow)")
-    bm = a.get("bm") or {}
     if bm.get("regime") == "DOMESTIC_LED" and bm.get("flow_score", 0) > 20:
         w.append("domestic-led markup vs foreign selling (counter-consensus — the 2025-IHSG pattern)")
     if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) > 20:
         w.append(f"foreign-led bid (EFD {bm.get('efd')}) — follow the foreign tape")
-    rz = a.get("response") or {}
     if rz.get("response") == "FAILED_BREAKDOWN_RECLAIM": w.append("failed breakdown + reclaim at lower band (trapped shorts)")
     if rz.get("response") == "ACCEPTANCE_ABOVE": w.append("acceptance above range (valid expansion, not a wick)")
     return w[:4] or ["confluence of layers (no single dominant trigger)"]
 
 def _whos_trapped(sig, a, mode):
     crowd = float(a.get("crowding", 50) or 50); vel = float(a.get("adoption_velocity", 0) or 0)
-    f = (a.get("flow") or {}).get("type"); rz = (a.get("response") or {}).get("response")
+    f = (a.get("flow") or {}).get("type"); rz = (a.get("response") or {}).get("response"); bm = a.get("bm") or {}
+    bearish = sig.direction == "short" or sig.category in ("DISTRIBUTION_SHORT", "REDUCE_AVOID")
+    if bearish:
+        if rz == "REJECTION": return "breakout buyers trapped above the band"
+        if crowd > 80 and vel < 0: return "late euphoric longs — unwind risk"
+        if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) < -20: return "longs holding against a foreign exit"
+        if f == "DISTRIBUTION": return "late buyers absorbing the unload"
+        return "late longs above — supply overhead"
     if f == "SHORT_COVERING" or mode == "SQUEEZE": return "shorts trapped — forced buying fuel"
     if rz == "FAILED_BREAKDOWN_RECLAIM": return "breakdown sellers trapped below the reclaim"
     if rz == "REJECTION": return "breakout buyers trapped above the band"
     if crowd > 85 and vel < 0: return "late euphoric longs — unwind risk"
     if f == "PANIC_LIQUIDATION": return "weak hands just flushed — supply reduced"
-    bm = a.get("bm") or {}
-    if bm.get("regime") == "DOMESTIC_LED" and bm.get("flow_score", 0) > 20:
-        return "foreign sellers are the exit liquidity — domestic marking up against them"
-    if bm.get("regime") == "FOREIGN_LED" and bm.get("flow_score", 0) < -20:
-        return "foreign-led distribution — do not fade the foreign tape"
     if crowd < 25 and sig.direction == "long": return "underexposed institutions — chase risk is UP"
     return "no acute trap — flow-driven setup"
 

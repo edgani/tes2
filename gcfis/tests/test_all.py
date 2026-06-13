@@ -318,11 +318,65 @@ def t_internals_horizon():
     assert out["breadth"] is not None and any("breadth" in d for d in out["divergences"]), out
     print(f"  INTERNALS: horizon align={h['alignment']} | breadth={out['breadth']} → narrow-fragility divergence fired | pairs n={len(out['pairs'])}  OK")
 
+def t_no_blanket_short():
+    """Risk-off must NOT manufacture identical shorts: conviction varies, accumulation tape is protected."""
+    r = np.random.default_rng(77)
+    ru = r.normal(0.0018, 0.009, N); acc = S(100*np.exp(np.cumsum(ru)))            # accumulation tape
+    accv = S(1e6*(1+0.5*(ru>0)) + r.normal(0, 5e4, N))
+    n_st = 60
+    rd = np.r_[r.normal(0.0028, 0.008, N-n_st-10), r.normal(0.0, 0.003, n_st),
+               [0.012, 0.013, -0.011, -0.012, 0.0, 0.001, -0.002, 0.001, -0.001, 0.0]]   # poke above → reject
+    dist = S(100*np.exp(np.cumsum(rd)))                                            # uptrend → tight stall → rejection
+    distv = S(np.r_[r.normal(1e6, 8e4, N-n_st-10), r.normal(3.2e6, 1.2e5, n_st+10)])
+    from gcfis.engines.flow_type import run_flow_type
+    _pre = run_flow_type(dist, distv)
+    assert _pre["type"] == "DISTRIBUTION", f"tape precondition failed: {_pre['type']}"  # fail loud, not vacuous
+    out = run_gcfis({"ACC": acc, "DIST": dist}, bench, {"risk_off": 0.9, "chop": 0.1},
+                    volumes={"ACC": accv, "DIST": distv}, confluence_min=45.0)
+    rows = {x["ticker"]: x for b in ("master_long","master_short","deferred_longs","avoided_long_only")
+            for x in out["ranking"][b]}
+    convs = {k: v["conviction"] for k, v in rows.items()}
+    assert rows, "expected at least one signal (test must not pass vacuously)"
+    assert "DIST" in rows and rows["DIST"]["direction"] == "short", rows.keys()
+    if len(convs) >= 2:
+        assert len(set(convs.values())) > 1, f"conviction collapsed to constant again: {convs}"
+    a_acc = out["per_ticker"]["ACC"]
+    if rows.get("ACC", {}).get("direction") == "short":
+        assert a_acc.get("_short_conflict"), "accumulation tape shorted without conflict flag"
+        assert any("⚠" in w for w in rows["ACC"].get("why_now", [])), rows["ACC"].get("why_now")
+    for k, v in rows.items():
+        if v.get("direction") == "short":
+            assert not any("persistent accumulation" in w or "trapped shorts" in w.lower() and "reclaim" in w
+                           for w in v.get("why_now", []) if "⚠" not in w), f"bullish evidence on SHORT {k}: {v['why_now']}"
+    print(f"  NO-BLANKET-SHORT: convs={convs} | ACC protected (conflict-guard) | shorts carry only bearish evidence  OK")
+
+def t_surge_crash():
+    from gcfis.engines.surge import run_surge
+    from gcfis.engines.crash_bottom import run_crash_bottom
+    sys_hi = {"liquidity": 75, "fragility": 30, "shock_prob": 30, "cross_asset": {}}
+    a_hi = {"crowding": 20, "flow": {"type": "ACCUMULATION", "absorption": 80, "persistence": 0.6},
+            "flow01": 0.8, "market_mode": {"mode": "SQUEEZE"}, "bottleneck_node": "HBM",
+            "adoption_velocity": 0.5, "stage": "INSTITUTIONAL", "acceleration": 0.5, "reflexivity": 60, "theme": "AI"}
+    a_lo = {"crowding": 92, "flow": {"type": "DISTRIBUTION", "absorption": 30, "persistence": 0.0},
+            "flow01": 0.2, "market_mode": {"mode": "DISTRIBUTION"}, "adoption_velocity": -0.4,
+            "stage": "RETAIL_MANIA", "acceleration": -0.5, "reflexivity": 95}
+    s_hi = run_surge(a_hi, sys_hi); s_lo = run_surge(a_lo, {"liquidity": 30, "fragility": 70, "shock_prob": 60})
+    assert s_hi["score"] >= 65 and s_hi["score"] > s_lo["score"] + 25, (s_hi, s_lo)
+    pt_bad = {f"T{i}": dict(a_lo, dealer={"gex_sign": -1}) for i in range(6)}
+    cr = run_crash_bottom({"liquidity": 25, "fragility": 80, "shock_prob": 70,
+                           "cross_asset": {"defer_longs": True}}, {"breadth": 0.30, "divergences": ["x", "y"]}, pt_bad)
+    assert cr["pressure"] >= 65 and cr["type"] == "SYSTEMIC", cr
+    pt_calm = {f"T{i}": dict(a_hi, dealer={"gex_sign": 1}, response={"response": "FAILED_BREAKDOWN_RECLAIM"}) for i in range(6)}
+    cb = run_crash_bottom({"liquidity": 65, "fragility": 35, "shock_prob": 40, "cross_asset": {}},
+                          {"breadth": 0.62, "divergences": []}, pt_calm)
+    assert cb["pressure"] <= 40 and cb["bottom"]["state"] == "DURABLE_BOTTOM_FORMING", cb
+    print(f"  SURGE/CRASH: surge hi={s_hi['score']} lo={s_lo['score']} | crash {cr['pressure']} {cr['type']} | bottom {cb['bottom']['state']} (p={cb['pressure']})  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon,t_no_blanket_short,t_surge_crash):
         fn()
     print("-"*84); print("ALL TESTS PASSED")

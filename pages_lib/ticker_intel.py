@@ -1,64 +1,109 @@
-"""TAB 5 — TICKER INTELLIGENCE (most important page): one ticker → full conditional readout.
-Top: GCFIS contract card · panels: flow/mode/response/BM/rotation · drivers of ITS market."""
+"""🔬 Ticker Intelligence — doc-15/16: THESIS (35) · POSITIONING (40) · EXECUTION (25)
++ CONFIDENCE STACK. Honest: absent feeds say so instead of faking."""
 from __future__ import annotations
 
-def render(snap: dict):
+_BUCKETS = ("master_long", "master_short", "deferred_longs", "avoided_long_only")
+_ARCH = {"BTC": "macro-liquidity asset", "ETH": "utility-liquidity hybrid",
+         "SOL": "reflexive high-beta network", "DOGE": "attention derivative",
+         "SHIB": "attention derivative", "PEPE": "attention derivative"}
+
+
+def render(snap):
     import streamlit as st
-    from pages_lib._gcfis_inline import get_gcfis_output
-    st.title("🔬 Ticker Intelligence")
+    from pages_lib._gcfis_inline import get_gcfis_output, num
     out = get_gcfis_output(snap, st)
     if not out:
-        st.warning("Need snapshot prices. Rebuild, then reopen."); return
+        st.error("GCFIS output unavailable — click Rebuild."); return
     per = out.get("per_ticker", {}) or {}
     if not per:
-        st.caption("no scored tickers (all eliminated or insufficient history)"); return
-    tickers = sorted(per.keys())
-    tkr = st.selectbox("Ticker", tickers) if hasattr(st, "selectbox") else tickers[0]
-    a = per.get(tkr, {})
+        st.warning("no tickers in universe"); return
+    tkr = st.selectbox("Ticker", sorted(per)) if hasattr(st, "selectbox") else sorted(per)[0]
+    a = per.get(tkr, {}) or {}
     rank = out.get("ranking", {}) or {}
-    row = None
-    for bucket in ("master_long", "master_short", "deferred_longs", "avoided_long_only"):
-        row = next((r for r in rank.get(bucket, []) if r.get("ticker") == tkr), None)
-        if row: break
-    try:
-        from gcfis.dashboard import card_html
-        if row:
-            st.markdown(card_html(row), unsafe_allow_html=True)
-        else:
-            st.caption("👁 WATCH — did not clear confluence this regime (panels below still live)")
-    except Exception:
-        pass
-    c = st.columns(4)
-    c[0].metric("Market", a.get("market", "—"))
-    c[1].metric("Mode", (a.get("market_mode") or {}).get("mode", "—"))
-    c[2].metric("Flow", (a.get("flow") or {}).get("type", "—"))
-    c[3].metric("Stage", a.get("stage", "—"))
-    h = a.get("horizon") or {}
-    if h.get("ok"):
-        s = h.get("signs", {})
-        st.caption(f"⏱ multi-TF alignment **{h['alignment']}/100** (d {s.get('daily',0):+d} · w {s.get('weekly',0):+d} · m {s.get('monthly',0):+d}) — doc-6 horizon stack")
-    st.caption(f"🔗 causal chain: {a.get('theme') or '—'} → {a.get('bottleneck_node') or '—'} → {tkr}")
-    dl = a.get("dealer") or {}
-    if dl.get("gex_sign"):
-        st.caption(f"🎲 dealer: gex_sign {dl.get('gex_sign'):+d} · regime {dl.get('regime','—')}" + (" · ⚠ proxy" if str(dl.get('source','')).lower()=='proxy' else ""))
-    f = a.get("flow") or {}
-    st.caption(f"flow: abs {f.get('absorption')} · eff {f.get('efficiency')} · pers {f.get('persistence')} · resil {f.get('resilience')} (OHLCV proxy)")
-    rz = a.get("response") or {}
-    if rz.get("ok"): st.caption(f"📍 risk-range response: **{rz.get('response')}** (quality {rz.get('quality')}, zone {rz.get('zone')})")
-    bm = a.get("bm") or {}
-    if bm.get("regime"):
-        st.caption(f"🇮🇩 BM: **{bm['regime']}** score {bm.get('flow_score')} · EFD {bm.get('efd')} · ParF {bm.get('par_f')} · CorrF {bm.get('corr_f')} · LPM{'✓' if bm.get('lpm_valid') else '✗'}")
-    rot = a.get("rotation") or {}
-    if rot: st.caption(f"↻ primed by {rot.get('leader')} (fired {rot.get('days_since_fire')}d ago, ~{rot.get('window')}d window)")
-    # drivers of THIS ticker's market
-    try:
-        from gcfis.market_drivers import ticker_driver_market
-        dm = ticker_driver_market(tkr, a.get("market", "us"))
-        dd = (out.get("drivers") or {}).get(dm)
-        if dd:
-            with st.expander(f"📡 what drives {dm.upper()} (surge up/down)"):
-                for r in dd.get("drivers", [])[:9]:
-                    z = r.get("reading_z"); zs = f"z {z:+.2f}" if z is not None else f"feed: {r['series']}"
-                    st.markdown(f"<span style='font-size:.78rem'>[{r['horizon']}·{'★'*r['strength']}] {r['factor']} ({'+' if r['sign']>0 else '−'}) — {zs}</span>", unsafe_allow_html=True)
-    except Exception:
-        pass
+    r = next((x for b in _BUCKETS for x in rank.get(b, []) if x.get("ticker") == tkr), {}) or {}
+    act = r.get("action", "WATCH"); d = r.get("direction", "")
+    col = "🟢" if d == "long" else "🔴" if d == "short" else "⚪"
+    f = a.get("flow") or {}; rz = a.get("response") or {}; bm = a.get("bm") or {}
+    dl = a.get("dealer") or {}; mkt = a.get("market", "us")
+    crowd = float(a.get("crowding", 50) or 50); vel = float(a.get("adoption_velocity", 0) or 0)
+
+    c1, c2, c3 = st.columns([0.35, 0.40, 0.25])
+    with c1:
+        st.markdown(f"## {col} {tkr} — {act}")
+        st.caption(f"conviction **{r.get('conviction','—')}**"
+                   + (f" · EV **{r.get('ev')}%**" if r.get("ev") is not None else "")
+                   + (f" · surge {r.get('surge')}" if r.get("surge") is not None else ""))
+        st.markdown("**Why now**")
+        for w in (r.get("why_now") or ["—"])[:4]: st.caption("· " + str(w))
+        st.markdown("**Why market wrong**")
+        wmw = []
+        if bm.get("regime") == "DOMESTIC_LED" and bm.get("flow_score", 0) > 20:
+            wmw.append("consensus reads foreign outflow as bearish — domestic operators are marking up into it")
+        if crowd < 35 and float(a.get("acceleration", 0) or 0) > 0:
+            wmw.append("underowned while accelerating — institutions not positioned yet")
+        if a.get("_short_conflict"):
+            wmw.append("⚠ tape conflicts with the short thesis (accumulation/reclaim present)")
+        for w in (wmw or ["— (needs consensus/positioning feed — honest seam)"]): st.caption("· " + w)
+        gip = (snap or {}).get("gip")
+        drv = (out.get("drivers") or {}).get({"commodity": "gold", "fx": "fx", "idx": "idx",
+                                              "crypto": "crypto"}.get(mkt, "us"), {}) or {}
+        st.markdown("**Regime fit**")
+        st.caption(f"quad {getattr(gip,'structural_quad','—')}/{getattr(gip,'monthly_quad','—')}"
+                   f" · market bias {drv.get('bias','—')} · stage {a.get('stage','—')}")
+        h = a.get("horizon") or {}
+        if h.get("ok"):
+            s = h.get("signs", {})
+            st.caption(f"⏱ multi-TF {h['alignment']}/100 (d {s.get('daily',0):+d} · w {s.get('weekly',0):+d} · m {s.get('monthly',0):+d})")
+        inv = r.get("invalidation") or {}
+        st.markdown("**Invalidation**")
+        st.caption(f"{inv.get('conditions', inv.get('cond','—'))} (px {inv.get('price') or '—'})")
+        if mkt == "crypto":
+            arch = next((v for k, v in _ARCH.items() if str(tkr).upper().startswith(k)),
+                        "alt — attention/unlock risk (unlock feed = seam)")
+            st.caption(f"🧬 archetype: {arch} — targets are regime-dependent (doc-17)")
+    with c2:
+        st.markdown("### 🎲 Positioning")
+        lad = [(k, dl.get(k)) for k in ("call_wall", "gamma_flip", "max_pain", "put_wall") if dl.get(k)]
+        if lad:
+            for k, v in lad: st.caption(f"`{k.replace('_',' ').upper():<12}` ━━ {v}")
+        if dl.get("gex_sign"):
+            st.caption(f"gex_sign {dl.get('gex_sign'):+d} · regime {dl.get('regime','—')}"
+                       + (" · ⚠ proxy" if str(dl.get('source','')).lower() == 'proxy' else ""))
+        if not lad and not dl.get("gex_sign"):
+            st.caption("— dealer ladder n/a for this market (options feed seam)")
+        st.caption(f"flow **{f.get('type','—')}** · abs {f.get('absorption','—')} · eff {f.get('efficiency','—')}"
+                   f" · pers {f.get('persistence','—')} (OHLCV proxy)")
+        st.caption(f"response **{rz.get('response','—')}** (q {rz.get('quality','—')})")
+        st.caption(f"crowding {crowd:.0f} · velocity {vel:+.2f}")
+        if bm.get("regime"):
+            st.caption(f"BM **{bm.get('regime')}** score {bm.get('flow_score')} · Par_F {bm.get('par_f','—')}"
+                       f" · Corr_F {bm.get('corr_f','—')} · EFD {bm.get('efd','—')}")
+        st.caption(f"🔗 chain: {a.get('theme') or '—'} → {a.get('bottleneck_node') or '—'} → {tkr}")
+    with c3:
+        st.markdown("### ⚡ Execution")
+        st.metric("Entry", "—" if act == "AVOID" else (r.get("entry") or "—"))
+        st.metric("Stop", r.get("stop") or "—")
+        tg = r.get("targets") or [x for x in (r.get("target"),) if x]
+        st.caption("targets: " + (" → ".join(str(x) for x in tg) if tg else "—"))
+        st.caption(f"size× {r.get('size_x', r.get('size','—'))} · hold {r.get('hold','—')}")
+        st.caption(f"EV {r.get('ev','—')}% · R/R {r.get('rr','—')}")
+    st.divider()
+    st.markdown("**Confidence stack** (from live fields — priors)")
+    sc = r.get("scores") or {}
+    meta_dir = sc.get("meta_long") if d != "short" else sc.get("meta_short")
+    gexs = dl.get("gex_sign")
+    rows = [("Macro/regime", meta_dir), ("Liquidity", round(num((out.get('systemic') or {}).get("liquidity"), 50), 0)),
+            ("Dealer", {1: 70, -1: 30}.get(gexs, "—") if gexs is not None else "—"),
+            ("Flow", round(100 * float(a.get("flow01", 0.5) or 0.5), 0)),
+            ("Narrative", 60 if a.get("theme") else 40),
+            ("Horizon", (a.get("horizon") or {}).get("alignment", "—"))]
+    st.markdown("| layer | score |\n|---|---|\n" + "\n".join(f"| {k} | {v} |" for k, v in rows))
+    key = {"commodity": ("gold" if "XAU" in str(tkr).upper() or "GOLD" in str(tkr).upper() else "oil"),
+           "fx": "fx", "idx": "idx", "crypto": "crypto"}.get(mkt, "us")
+    dd = (out.get("drivers") or {}).get(key) or {}
+    if dd.get("readings"):
+        with st.expander(f"📡 what drives {key.upper()} (surge up/down)"):
+            for x in dd["readings"]:
+                st.caption(f"[{x.get('horizon','?')}·{'★'*int(x.get('strength',1))}] {x.get('factor','?')} "
+                           f"({x.get('sign','+')}) — " + (f"z {x.get('reading_z')}" if x.get("reading_z") is not None
+                                                          else f"feed: {x.get('feed','—')}"))

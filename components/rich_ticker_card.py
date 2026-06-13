@@ -331,9 +331,9 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     lpm, inten, rot = s.get("lpm"), s.get("intensity"), s.get("rotation")
     if not (idx and o and h and l and c) or len(idx) < 10:
         return None
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.62, 0.19, 0.19],
-                        vertical_spacing=0.035, specs=[[{"secondary_y": True}], [{}], [{}]],
-                        subplot_titles=("Price + LPM (Liquidity Pressure Model)", "Intensity", "Vol Rotation"))
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.74, 0.26],
+                        vertical_spacing=0.04, specs=[[{"secondary_y": True}], [{}]],
+                        subplot_titles=("Price + LPM (conditional — valid only w/ liq-expansion + breadth)", "Intensity (trigger-only)"))
     # candlesticks
     fig.add_trace(go.Candlestick(x=idx, open=o, high=h, low=l, close=c, name="Price",
                                  increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
@@ -343,19 +343,10 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     if lpm:
         fig.add_trace(go.Scatter(x=idx, y=lpm, mode="lines", name="LPM",
                                  line={"color": "#2dd4bf", "width": 1.6}), row=1, col=1, secondary_y=True)
-    if bm.get("avgcost"):
-        fig.add_hline(y=bm["avgcost"], line={"color": "#f0b429", "width": 1, "dash": "dot"},
-                      row=1, col=1, secondary_y=False,
-                      annotation_text=f"AvgCost {cur}{bm['avgcost']:,.0f}",
-                      annotation_font={"size": 8, "color": "#f0b429"})
     # Intensity (purple bars)
     if inten:
         fig.add_trace(go.Bar(x=idx, y=inten, marker_color="#a371f7", name="Intensity"), row=2, col=1)
-    # Vol Rotation (green=efficient / yellow=noise / red=distribution)
-    if rot:
-        rc = ["#26a69a" if (x or 0) > 0.15 else "#ef5350" if (x or 0) < -0.15 else "#d4a017" for x in rot]
-        fig.add_trace(go.Bar(x=idx, y=[abs(x or 0) for x in rot], marker_color=rc, name="Vol Rotation"), row=3, col=1)
-    fig.update_layout(height=480, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+    fig.update_layout(height=420, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(13,17,23,0.6)", font={"color": "#c9d1d9", "size": 10},
                       margin={"t": 42, "b": 18, "l": 50, "r": 50}, bargap=0.15,
                       xaxis_rangeslider_visible=False,
@@ -461,7 +452,6 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
                                f"ruang {_mk.get('suppression_pct')}%)" if _mk.get("verdict") not in (None, "n/a") else "")
                     st.caption(
                         f"**LPM** (teal) = tekanan likuiditas bandar · **Intensity** = lonjakan aktivitas sebelum harga gerak · "
-                        f"**Vol Rotation** (ijo=efisien/kuning=noise/merah=distribusi). Phase **{_bm.get('phase')}** · score {_bm.get('score')}/100{_stl_txt}{_mk_txt}. "
                         f"⚠️ Approx OHLCV; Foreign Flow butuh data Type-F IDX (gak ada di yfinance). Validasi: `validate_bandarmetrics.py`.")
     except Exception:
         pass

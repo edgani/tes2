@@ -19,7 +19,7 @@ def render(snap: dict):
         st.markdown("#### 📡 Conditional driver map (surge-up / surge-down per market)")
         for mkt, dd in drv.items():
             bias = dd.get("bias")
-            col = "#1a7f37" if bias == "LONG" else "#cf222e" if bias == "SHORT" else "#57606a"
+            col = "#1a7f37" if bias == "LONG" else "#cf222e" if bias == "SHORT" else "#9a6700" if str(bias).startswith("LEAN") else "#57606a"
             with st.expander(f"{mkt.upper()} — bias {bias}" + (f" (score {dd.get('score')}, {dd.get('fed')} feeds)" if dd.get('score') is not None else "")):
                 for r in dd.get("drivers", []):
                     z = r.get("reading_z")

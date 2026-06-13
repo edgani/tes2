@@ -1,64 +1,85 @@
-"""TAB 1 — MISSION CONTROL: 'What changed that matters NOW?' (attachment-1 final design).
-System State summary → Stress/Shock → rotation → TOP EV TRADES. Stress weights are PRIORS."""
+"""🛰 Mission Control — doc-16 layout: WORLD STATE → macro strip → divergences →
+OPPORTUNITY MATRIX (LONG/SHORT/EARLY/HEDGE) → FRAGILITY STACK (crash engine)."""
 from __future__ import annotations
 
-def render(snap: dict):
+
+def render(snap):
     import streamlit as st
-    from pages_lib._gcfis_inline import get_gcfis_output
-    try:
-        from gcfis.dashboard import card_html, quad_label, regime_color
-    except Exception as e:
-        st.error(f"GCFIS unavailable: {e}"); return
-    st.title("🛰 Mission Control")
+    from pages_lib._gcfis_inline import get_gcfis_output, num
+    from gcfis.dashboard import card_scan_html
     out = get_gcfis_output(snap, st)
     if not out:
-        st.warning("Need snapshot prices (≥2 tickers, ≥60 bars). Rebuild, then reopen."); return
-    sysd = out.get("systemic", {}); rank = out.get("ranking", {})
-    fwd = sysd.get("forward_macro", {}); cross = sysd.get("cross_asset", {}) or {}
-    frag = (sysd.get("fragility", {}) or {}).get("fragility", 0) or 0
-    shock = (sysd.get("shock", {}) or {}).get("shock_prob", 0) or 0
-    liq = (sysd.get("liquidity", {}) or {}).get("liquidity_regime", 50) or 50
-    longs = rank.get("master_long", []); shorts = rank.get("master_short", [])
-    crowd = [r.get("crowding", 50) for r in longs[:8]]
-    avg_crowd = sum(crowd)/len(crowd) if crowd else 50.0
-    stress = 0.30*(100-liq) + 0.30*frag + 0.25*shock + 0.15*avg_crowd   # PRIOR weights (doc formula adapted to live feeds)
-    # ── SYSTEM STATE (master regime summary) ──
-    q = quad_label(fwd.get("forward_quad")); cr = cross.get("regime") or "—"
-    themes = {}
-    for r in longs:
-        th = r.get("theme") or r.get("category") or "—"; themes[th] = themes.get(th, 0) + 1
-    best = ", ".join(k for k, _ in sorted(themes.items(), key=lambda kv: -kv[1])[:3]) or "—"
-    avoid = ", ".join(r["ticker"] for r in (rank.get("sections", {}) or {}).get("distribution_warning", [])[:4]) or "—"
-    risk_line = ("Liquidation tape — new longs deferred" if cross.get("defer_longs")
-                 else f"Shock {shock:.0f} / Fragility {frag:.0f}" if (shock > 50 or frag > 60)
-                 else "No acute systemic trigger")
-    st.markdown(
-        f"**SYSTEM STATE** — {q} · cross-asset <span style='color:{regime_color(cr)}'>{cr}</span> · "
-        f"regime engine: {out.get('_regime_method','—')}<br>"
-        f"**STRESS** {stress:.0f}/100 (liq {100-liq:.0f} · frag {frag:.0f} · shock {shock:.0f} · crowd {avg_crowd:.0f} — prior weights)<br>"
-        f"**BEST** {best} &nbsp;·&nbsp; **AVOID/REDUCE** {avoid}<br>"
-        f"**TOP RISK** {risk_line}", unsafe_allow_html=True)
-    c = st.columns(5)
-    c[0].metric("Forward Quad", q); c[1].metric("Stress", f"{stress:.0f}")
-    c[2].metric("Fragility", f"{frag:.0f}"); c[3].metric("Shock P", f"{shock:.0f}"); c[4].metric("Liquidity", f"{liq:.0f}")
-    if cross.get("ok"):
-        st.caption("📡 " + (cross.get("why") or ""))
-        for d in cross.get("divergences", []): st.warning(d)
+        st.error("GCFIS output unavailable — click Rebuild."); return
+    rank = out.get("ranking", {}) or {}
+    per = out.get("per_ticker", {}) or {}
+    sysf = out.get("systemic") or {}
+    crash = out.get("crash") or {}
+    gip = (snap or {}).get("gip")
+    sq = getattr(gip, "structural_quad", "—"); mq = getattr(gip, "monthly_quad", "—")
+    cross = (sysf.get("cross_asset") or out.get("cross_asset") or {})
+    xreg = cross.get("regime", "MIXED")
+    rmethod = out.get("regime_method") or (out.get("regime") or {}).get("method", "—")
+    liq = num(sysf.get("liquidity"), 50); frag = num(sysf.get("fragility"), 50)
+    shock = num(sysf.get("shock_prob"), 50)
+    crowd_avg = (sum(float(a.get("crowding", 50) or 50) for a in per.values()) / max(len(per), 1)) if per else 50.0
+    stress = 0.30 * (100 - liq) + 0.30 * frag + 0.25 * shock + 0.15 * crowd_avg
     intern = out.get("internals") or {}
-    for d in intern.get("divergences", []): st.warning("🧬 " + d)
-    pf = rank.get("portfolio", {}) or {}
-    if pf.get("warning"): st.warning("📦 " + pf["warning"])
-    rot = out.get("rotation") or {}
-    if rot:
-        st.caption("↻ rotation primed: " + " · ".join(f"{f}←{d.get('leader')} (~{d.get('window')}d)" for f, d in list(rot.items())[:4]))
+    breadth = intern.get("breadth")
+
+    # ---- Tier 1: WORLD STATE ----
+    ctype = crash.get("type", "LOW")
+    st.markdown(f"## 🌍 {sq} structural · {mq} monthly — cross-asset **{xreg}**"
+                + (f" · ⚠ crash-type **{ctype}**" if ctype not in ("LOW", None) else ""))
+    st.caption(f"regime engine: {rmethod} · crash basis: {crash.get('basis','—')}")
+    # ---- macro strip ----
+    st.caption(f"LIQ {liq:.0f} · FRAG {frag:.0f} · SHOCK {shock:.0f} · CROWD {crowd_avg:.0f}"
+               + (f" · BREADTH {breadth:.0%}" if breadth is not None else "")
+               + f" · STRESS {stress:.0f}/100 (prior weights)")
+    for dv in (cross.get("divergences") or []): st.warning(dv)
+    for dv in (intern.get("divergences") or []): st.warning("🧬 " + dv)
     st.divider()
-    st.markdown("#### 🎯 TOP EV TRADES")
-    if not longs and not shorts:
-        st.caption("No names cleared product-confluence this regime.")
-    for r in longs[:5]: st.markdown(card_html(r), unsafe_allow_html=True)
-    for r in shorts[:2]: st.markdown(card_html(r), unsafe_allow_html=True)
-    if rank.get("deferred_longs"):
-        with st.expander(f"⏸ deferred longs ({len(rank['deferred_longs'])}) — cross-asset gate"):
-            for r in rank["deferred_longs"][:4]: st.markdown(card_html(r, deferred=True), unsafe_allow_html=True)
-    if rank.get("eliminated"):
-        st.caption("🗑 stage-1 eliminated: " + ", ".join(e["ticker"] for e in rank["eliminated"][:8]))
+
+    # ---- OPPORTUNITY MATRIX + FRAGILITY STACK ----
+    rows_all = [x for b in ("master_long", "master_short", "deferred_longs", "avoided_long_only")
+                for x in rank.get(b, [])]
+    longs = rank.get("master_long", []); shorts = rank.get("master_short", [])
+    early = sorted([r for r in rows_all
+                    if (r.get("surge") or 0) >= 60 and float((per.get(r["ticker"], {}) or {}).get("crowding", 50) or 50) < 60
+                    and r not in longs],
+                   key=lambda r: -(r.get("surge") or 0))
+    hedge = rank.get("deferred_longs", []) + (rank.get("sections", {}) or {}).get("distribution_warning", [])
+
+    def _evkey(r): return (0 if r.get("entry_valid") else 1, -(r.get("ev") if r.get("ev") is not None else -999))
+    colMain, colFrag = st.columns([3, 1])
+    with colMain:
+        st.markdown("### 🎯 Opportunity matrix")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.markdown("**🟢 LONG**")
+            for r in sorted(longs, key=_evkey)[:3]: st.markdown(card_scan_html(r), unsafe_allow_html=True)
+            if not longs: st.caption("—")
+        with c2:
+            st.markdown("**🔴 SHORT**")
+            for r in sorted(shorts, key=_evkey)[:3]: st.markdown(card_scan_html(r), unsafe_allow_html=True)
+            if not shorts: st.caption("—")
+        with c3:
+            st.markdown("**🌱 EARLY** · surge & uncrowded")
+            for r in early[:3]: st.markdown(card_scan_html(r), unsafe_allow_html=True)
+            if not early: st.caption("—")
+        with c4:
+            st.markdown("**🛡 HEDGE/AVOID**")
+            for r in hedge[:3]:
+                st.caption(f"· **{r.get('ticker')}** {r.get('action','')} — {(r.get('why_now') or ['—'])[0][:60]}")
+            if not hedge: st.caption("—")
+    with colFrag:
+        st.markdown("### 🧱 Fragility stack")
+        st.metric("CRASH PRESSURE", f"{crash.get('pressure','—')}", ctype)
+        for k, v in (crash.get("components") or {}).items():
+            st.caption(f"{k}: {v:.2f}")
+        bt = (crash.get("bottom") or {})
+        st.caption(f"bottom: **{bt.get('state','—')}** ({bt.get('score','—')}/100)")
+        st.caption(f"deferred {len(rank.get('deferred_longs', []))} · eliminated {len(rank.get('eliminated', []))}")
+
+    if not longs:
+        dl = [m.upper() for m, dd in (out.get("drivers") or {}).items() if "LONG" in str(dd.get("bias", ""))]
+        if dl: st.caption("driver-bias longs (no GCFIS long yet): " + ", ".join(dl[:3]))

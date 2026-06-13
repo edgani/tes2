@@ -21,6 +21,8 @@ from .engines.market_mode import run_market_mode
 from .engines.elimination import run_elimination
 from .engines.response_zone import run_response_zone
 from .engines.internals import run_internals, run_horizon
+from .engines.surge import run_surge
+from .engines.crash_bottom import run_crash_bottom
 from .meta.decision_stack import build_decision_stack
 from .engines.leadlag_discovery import run_leadlag_discovery
 from .engines.rotation import run_rotation
@@ -45,7 +47,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
               ticker_node_map=None, subthemes=None,
               earnings_rev_by_ticker=None, inst_own_by_ticker=None, etf_flow_by_ticker=None,
               options_oi_by_ticker=None, social_by_ticker=None, short_int_by_ticker=None, lev_etf_set=None,
-              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None, driver_data=None, typef_by_ticker=None):
+              leadlag_cfg=None, dealer_by_ticker=None, bottleneck_node_history=None, market_hints=None, driver_data=None, typef_by_ticker=None, confluence_min=55.0):
     si = systemic_inputs or {}
     # --- SYSTEMIC / CONTEXT (L1-L6, L10) ---
     frag = run_fragility(si, returns_matrix, index_returns)
@@ -144,7 +146,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
             per_ticker[f]["rotation_strength"] = sigrot["strength"]
 
     # --- ASSET SELECTION (L12) ---
-    ranking = run_regime_meta(per_ticker, systemic, regime_posterior, min_adv=min_adv)
+    ranking = run_regime_meta(per_ticker, systemic, regime_posterior, min_adv=min_adv, confluence_min=confluence_min)
 
     # --- ENTRY (L13) + cross-asset gate + full contract attach + reason per signal ---
 
@@ -192,7 +194,14 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
         sig.market = mkt
         sig.response = a.get("response", {})
         sig.bm = a.get("bm", {})
+        sig.surge = (a.get("surge") or {}).get("score")
         build_decision_stack(sig, a)                       # doc 6: SO WHAT DO I DO NOW
+        try:
+            if sig.entry_valid and sig.entry and sig.stop and sig.target and sig.entry > 0:
+                _p = float(sig.conviction) / 100.0
+                sig.ev = round(100.0 * (_p * abs(sig.target - sig.entry) - (1 - _p) * abs(sig.entry - sig.stop)) / sig.entry, 2)
+        except Exception:
+            sig.ev = None
         # cross-asset gate: defer NEW longs during liquidation ('data good but price falling' guard)
         deferred_long = bool(cross.get("defer_longs") and sig.direction == "long"
                              and sig.action in ("BUILD_LONG", "START_SCALING"))
@@ -232,7 +241,10 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     from .market_drivers import read_all as _read_drivers
     drivers = _read_drivers(driver_data)
     internals = run_internals(prices, bench)
-    return {"ok": True, "drivers": drivers, "internals": internals,
+    for _t, _a in per_ticker.items():
+        _a["surge"] = run_surge(_a, systemic, internals)
+    crash = run_crash_bottom(systemic, internals, per_ticker)
+    return {"ok": True, "drivers": drivers, "internals": internals, "crash": crash,
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],

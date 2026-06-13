@@ -9,11 +9,11 @@ def render(snap: dict):
     out = get_gcfis_output(snap, st)
     if out:
         try:
-            from gcfis.dashboard import card_html
+            from gcfis.dashboard import card_html, card_scan_html
             sec = (out.get("ranking", {}) or {}).get("sections", {}) or {}
             def _sec(rows, head, note):
                 st.markdown(f"#### {head} · {len(rows)}"); st.caption(note)
-                for r in rows[:6]: st.markdown(card_html(r), unsafe_allow_html=True)
+                for r in rows[:6]: st.markdown(card_scan_html(r), unsafe_allow_html=True)
             _sec(sec.get("early_monsters", []), "💎 EARLY MONSTERS", "structural accumulation · uncrowded · weeks–months")
             _sec(sec.get("squeeze", []), "⚡ SQUEEZE ENGINE", "forced-flow potential · tactical")
             _sec(sec.get("tactical_momentum", []), "🚀 TACTICAL MOMENTUM", "accepted expansion · days–weeks")

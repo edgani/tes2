@@ -97,7 +97,14 @@ def read_all(data: dict | None) -> dict:
                 num += w * d["sign"] * z; den += w
             readings.append(row)
         score = round(num / den, 2) if den else None
-        bias = ("LONG" if score > 0.5 else "SHORT" if score < -0.5 else "NEUTRAL") if score is not None else "NO_DATA"
+        if score is None:
+            bias = "NO_DATA"
+        elif fed_n := sum(1 for r in readings if r["reading_z"] is not None):
+            full = fed_n >= 2
+            bias = (("LONG" if full else "LEAN_LONG") if score > 0.5 else
+                    ("SHORT" if full else "LEAN_SHORT") if score < -0.5 else "NEUTRAL")
+        else:
+            bias = "NO_DATA"
         out[mkt] = {"drivers": readings, "bias": bias, "score": score,
                     "fed": int(sum(1 for r in readings if r["reading_z"] is not None))}
     return out

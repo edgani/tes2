@@ -31,6 +31,23 @@ _MKT_W = {
     "commodity": {"bottleneck": 1.3, "flow": 1.1, "accumulation": 1.0, "theme": 0.9, "reflexivity": 0.8, "adoption": 0.9},
 }
 
+def _conv_blend(a: dict, meta_dir: float, offensive: float, crowd: float, direction: str) -> float:
+    """HYBRID conviction (doc-13/19): regime gate stays in meta; conviction = additive blend of
+    ORTHOGONAL evidence so tickers DISCRIMINATE (pure product/floor collapsed everything to one number).
+    Weights are priors pending walk-forward."""
+    f01 = float(a.get("flow01") if a.get("flow01") is not None else 0.5)
+    hz = float(((a.get("horizon") or {}).get("alignment", 50)) or 50) / 100.0
+    rq = float(((a.get("response") or {}).get("quality", 50)) or 50) / 100.0
+    cr = float(crowd or 50) / 100.0
+    if direction == "short":
+        f01, hz, rq, cr = 1.0 - f01, 1.0 - hz, 1.0 - rq, cr   # shorts like bearish flow, broken TFs, weak response, crowded longs
+    else:
+        cr = 1.0 - cr                                          # longs like UNcrowded
+    raw = (0.30 * (meta_dir / 100.0) + 0.25 * float(offensive) + 0.15 * f01
+           + 0.10 * hz + 0.10 * rq + 0.10 * cr)
+    return float(np.clip(raw * 100.0, 0, 100))
+
+
 def _wgeo(subs: dict, market: str, stress: bool = False) -> float:
     """Weighted geometric mean: exp(Σ w·ln s / Σ w). Absent layers excluded (no penalty).
     stress=True (deleveraging / risk-off) → adaptive tilt: flow & accumulation matter MORE,
@@ -87,10 +104,24 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
         if crowded_rolling_over: dist += 0.40
         if bsign < 0: dist += 0.30
         if a.get("cot_extreme_long"): dist += 0.20
+        _ftd = (a.get("flow") or {}).get("type"); _rzd = (a.get("response") or {}).get("response")
+        if _ftd == "DISTRIBUTION": dist += 0.30                       # doc-1/2 microstructure feeds the short side
+        if _ftd == "PANIC_LIQUIDATION": dist += 0.15
+        if (a.get("market_mode") or {}).get("mode") == "DISTRIBUTION": dist += 0.20
+        if _rzd in ("REJECTION", "NO_BID_CONTINUATION"): dist += 0.15
         dist = min(dist, 1.0); bear = dist * 100.0
 
         meta_long = bull * W["long"] * (1 - W["drag"] * stress)
-        meta_short = max(bear * W["short"], 100 * stress * W["short"])
+        if crowd > 90 and vel < 0:
+            meta_long *= 0.30                                   # positioning override: crowded & rolling over beats macro
+        # stress AMPLIFIES per-ticker bear evidence — it never manufactures a short by itself
+        # (the old ticker-independent floor 100·stress·W_short collapsed every conviction to one constant)
+        meta_short = bear * W["short"] * (1.0 + 0.6 * stress)
+        _ft = (a.get("flow") or {}).get("type"); _rz = (a.get("response") or {}).get("response")
+        a["_short_conflict"] = False
+        if _ft == "ACCUMULATION" or _rz == "FAILED_BREAKDOWN_RECLAIM":
+            meta_short *= 0.45                                # contradiction guard: bullish tape caps the short
+            a["_short_conflict"] = True
         reason = ""
         if W["long"] > 0.6 and dist >= 0.4:                  # counter-regime flow-dominance
             meta_long *= 0.4; meta_short = min(100, meta_short + 20)
@@ -109,12 +140,13 @@ def run_regime_meta(per_ticker: dict, systemic: dict, regime_posterior: dict,
             action, conv, direction = "STAND_ASIDE", 0.0, "none"
             reason = (reason + "; " if reason else "") + "below capacity (illiquid)"
         elif meta_long >= confluence_min and not a.get("exit_signal"):
-            action, conv, direction = "BUILD_LONG", meta_long, "long"
-        elif meta_short >= confluence_min:
-            action, conv, direction = "BUILD_SHORT", meta_short, "short"
+            action, conv, direction = "BUILD_LONG", _conv_blend(a, meta_long, offensive, crowd, "long"), "long"
+        elif meta_short >= confluence_min and bear >= 35:     # short needs REAL per-ticker distribution evidence
+            action, conv, direction = "BUILD_SHORT", _conv_blend(a, meta_short, offensive, crowd, "short"), "short"
         elif max(meta_long, meta_short) >= 50:
             direction = "long" if meta_long >= meta_short else "short"
-            action, conv = "START_SCALING", max(meta_long, meta_short)
+            action = "START_SCALING"
+            conv = _conv_blend(a, max(meta_long, meta_short), offensive, crowd, direction)
         else:
             action, conv, direction = "STAND_ASIDE", max(meta_long, meta_short), "none"
         if not reason:

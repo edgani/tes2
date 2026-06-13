@@ -84,3 +84,18 @@ def get_gcfis_output(snap: dict, st):
         return out
     except Exception:
         return None
+
+
+def num(x, default=50.0):
+    """Robust numeric extractor: accepts number OR nested engine dict ({'score':..}/{'value':..}/first numeric)."""
+    if isinstance(x, (int, float)):
+        return float(x)
+    if isinstance(x, dict):
+        for k in ("score", "value", "level", "pressure", "composite", "prob", "pct"):
+            v = x.get(k)
+            if isinstance(v, (int, float)):
+                return float(v)
+        for v in x.values():
+            if isinstance(v, (int, float)):
+                return float(v)
+    return float(default)
