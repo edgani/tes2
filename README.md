@@ -31,3 +31,11 @@ reflexivity — so flow_type's direction-blindness is fixed: it's one input, not
 Demo proof: PLTR/XLU → LONG (real RS + institutional stage); NVDA/BTC correctly HELD (retail-mania
 + exit_signal = don't chase top). Open flaw logged: ATR-based stops sometimes give RR<1 — sizing/
 target engine (entry.py) to be wired next. Engines mapped to ChatGPT audit in the chat.
+
+## salvage audit + BandarMetrics (this pass)
+- Confirmed: all 34 v40 engines/meta/core ARE in v2 (not thrown away). What was missing = the rich
+  UI layer; now restored: components/ (rich_ticker_card, market_panels, mini_viz, options_layer,
+  ticker_card, causal_map) — all compile clean in v2.
+- BandarMetrics: core/bandarmetrics.py + calibrate() harness reverse-engineers BM's exact convention
+  from your reference numbers. See BANDARMETRICS_REVERSE_ENGINEERING.md. Proven on synthetic
+  (recovered hidden window exactly). Final exact-match needs your TPIA/BREN export (IDX blocked here).

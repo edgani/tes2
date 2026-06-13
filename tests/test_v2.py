@@ -48,8 +48,30 @@ def t_typef_parser_reuse():
     print(f"  TYPE-F: IDX parser reused ok (BREN fb={d.iloc[0]['fb']:.0f})  OK")
 
 
+def t_bandarmetrics_calibration():
+    """BM harness must recover a hidden convention from known outputs (reverse-engineering proof)."""
+    import numpy as np, pandas as pd
+    from core.bandarmetrics import compute_bm, calibrate
+    def synth(seed, drift, align, n=160):
+        rng=np.random.default_rng(seed); ix=pd.bdate_range('2025-01-01',periods=n)
+        c=1000*np.exp(np.cumsum(rng.normal(drift,0.02,n)))
+        h=c*(1+abs(rng.normal(0,0.01,n))); l=c*(1-abs(rng.normal(0,0.01,n))); o=c
+        vol=rng.normal(5e7,5e6,n).clip(1e6); val=c*vol
+        r=np.diff(np.log(c),prepend=np.log(c[0])); base=rng.normal(0,1,n)
+        fnet=align*r/(r.std()+1e-9)+(1-abs(align))*base; gross=abs(fnet)+abs(rng.normal(0,1,n))+0.5
+        sc=val*0.3; fb=(gross+fnet).clip(min=0)*sc*0.5; fs=(gross-fnet).clip(min=0)*sc*0.5
+        return pd.DataFrame({'date':ix,'open':o,'high':h,'low':l,'close':c,'volume':vol,'value':val,'fb':fb,'fs':fs})
+    A=synth(1,0.004,0.85); B=synth(2,-0.002,-0.2); W=45
+    ta=compute_bm(A,window=W); tb=compute_bm(B,window=W)
+    tg={'A':{'corr_f':round(ta['corr_f'],3),'par_f':round(ta['par_f'],4)},
+        'B':{'corr_f':round(tb['corr_f'],3),'par_f':round(tb['par_f'],4)}}
+    r=calibrate({'A':A,'B':B},tg)
+    assert r['ok'] and r['window']==W and r['verdict']=='EXACT-MATCH', r
+    print(f"  BANDARMETRICS: calibrate recovered hidden window={r['window']} (err {r['total_abs_error']})  OK")
+
+
 if __name__ == "__main__":
-    for fn in (t_fred_parser_and_macro, t_shock_engine_real_vs_proxy, t_typef_parser_reuse):
+    for fn in (t_fred_parser_and_macro, t_shock_engine_real_vs_proxy, t_typef_parser_reuse, t_bandarmetrics_calibration):
         fn()
     print("-" * 60)
     print("V2 FOUNDATION TESTS PASSED")
