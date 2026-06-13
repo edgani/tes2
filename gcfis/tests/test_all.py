@@ -402,11 +402,42 @@ def t_feeds_parsers():
     assert "ff_cum" in prim.columns and "close_px" in prim.columns and -100 <= last["flow_score"] <= 100
     print(f"  FEEDS: FRED NetLiq={nl.iloc[0]:.0f}bn ok | IDX parser 2 casings ok | typef→engine smoke regime={last['regime']}  OK")
 
+def t_final_desk():
+    """Desk = THE answer: ≤10, every pick has ≥2 reasons + invalidation + valid entry + EV; no padding."""
+    from gcfis.meta.final_desk import build_final_desk
+    def row(t, mkt, conv, ev, valid=True, why=2, inv=True, d="long"):
+        return {"ticker": t, "market": mkt, "direction": d, "theme": f"th{t[:2]}",
+                "action": "BUILD_LONG" if d == "long" else "BUILD_SHORT",
+                "conviction": conv, "ev": ev, "surge": 60, "entry_valid": valid,
+                "entry": 100, "stop": 95, "target": 110, "targets": [110, 120],
+                "why_now": [f"evidence {i}" for i in range(why)],
+                "invalidation": {"price": 94} if inv else {},
+                "response": {"quality": 70}, "market_mode": "EXPANSION", "flow": {"type": "ACCUMULATION"}}
+    longs = [row(f"L{i}", ["us", "crypto", "fx", "idx"][i % 4], 60 + i, 3 + i) for i in range(14)]
+    longs.append(row("BADWAIT", "us", 95, 9, valid=False))          # entry invalid → rejected
+    longs.append(row("BADWHY", "us", 95, 9, why=1))                 # <2 reasons → rejected
+    longs.append(row("BADINV", "us", 95, 9, inv=False))             # no invalidation → rejected
+    shorts = [row("SCONF", "us", 80, 6, d="short")]
+    per = {r["ticker"]: {} for r in longs + shorts}; per["SCONF"] = {"_short_conflict": True}
+    desk = build_final_desk({"master_long": longs, "master_short": shorts}, per)
+    p = desk["picks"]
+    assert 0 < len(p) <= 10 and len({x["ticker"] for x in p}) == len(p)
+    assert all(len(x["reasons"]) >= 2 and (x["invalidation"].get("price") or x["invalidation"].get("conditions")) for x in p)
+    assert all(x["ticker"] not in ("BADWAIT", "BADWHY", "BADINV", "SCONF") for x in p), [x["ticker"] for x in p]
+    scores = [x["desk_score"] for x in p]
+    assert scores == sorted(scores, reverse=True)
+    from collections import Counter
+    assert max(Counter(x["market"] for x in p).values()) <= 3
+    # honesty: thin book → output N<10, not padded
+    thin = build_final_desk({"master_long": longs[:3], "master_short": []}, per)
+    assert len(thin["picks"]) == 3 and "no fabricated fills" in thin["note"]
+    print(f"  FINAL DESK: {len(p)} picks · sorted · diversity≤3/mkt · invalid/conflict/thin-reason rejected · thin-book honest ({thin['note']})  OK")
+
 if __name__ == "__main__":
     print("GCFIS full suite (13 layers + B5 + entry + cross-asset + confluence + contract + rotation + portfolio + markets)"); print("-"*84)
     for fn in (t_l1_fragility,t_l2_forward_macro,t_l3_liquidity,t_l4_flow,t_l5_theme,t_l6_bottleneck,
                t_l7_accumulation,t_l8_dealer,t_l9_positioning,t_l10_crypto,t_broker,t_l13_entry,
                t_cross_asset,t_narrative,t_reflexivity,t_bottleneck_map,t_rotation,t_portfolio,t_long_only_idx,
-               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon,t_no_blanket_short,t_surge_crash,t_feeds_parsers):
+               t_end_to_end,t_cross_defer_e2e,t_full_contract_e2e,t_rotation_portfolio_e2e,t_docs_stack_e2e,t_driver_map,t_bm_flow_regime,t_bm_idx_wiring_e2e,t_internals_horizon,t_no_blanket_short,t_surge_crash,t_feeds_parsers,t_final_desk):
         fn()
     print("-"*84); print("ALL TESTS PASSED")

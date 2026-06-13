@@ -196,7 +196,29 @@ def card_scan_html(r) -> str:
             f"<span style='font-weight:700;font-size:15px'>{r.get('ticker')}</span> "
             f"<span style='color:{col};font-weight:700'>{act}</span> "
             f"<span style='color:#8b949e;font-size:12px;white-space:nowrap'>{bits}</span>"
-            f"<div style='color:#8b949e;font-size:11px;margin-top:2px'>{ftype} · mode {r.get('market_mode','—')}"
+            f"<div style='color:#8b949e;font-size:11px;margin-top:2px'>{ftype} · mode {r.get('market_mode','—')}" + (' · ⚠FALSE-ACCUM' if (r.get('bm') or {}).get('false_accum') else '')
             + (f" — {why}" if why else "") + "</div>"
             f"<details style='margin-top:4px'><summary style='cursor:pointer;color:#58a6ff;font-size:11px'>"
             f"detail</summary>{card_html(r)}</details></div>")
+
+
+def desk_card_html(p) -> str:
+    """FINAL DESK pick: rank · side · conv/EV · ≤3 reasons · execution · invalidation."""
+    col = "#3fb950" if p.get("side") == "long" else "#f85149"
+    tg = " → ".join(str(x) for x in (p.get("targets") or [])[:3]) or "—"
+    inv = p.get("invalidation") or {}
+    reasons = "".join(f"<div style='color:#c9d1d9;font-size:11px'>· {w}</div>" for w in p.get("reasons", []))
+    pt = p.get("primary_target")
+    return (f"<div style='border:1px solid #30363d;border-left:4px solid {col};border-radius:8px;"
+            f"padding:8px 12px;margin:7px 0;background:#0d1117'>"
+            f"<span style='color:#8b949e;font-weight:700'>#{p.get('rank')}</span> "
+            f"<span style='font-size:16px;font-weight:800'>{p.get('ticker')}</span> "
+            f"<span style='color:{col};font-weight:800'>{str(p.get('side','')).upper()}</span> "
+            f"<span style='color:#8b949e;font-size:12px;white-space:nowrap'>conv {p.get('conviction')} · EV {p.get('ev')}% "
+            f"· {p.get('market')} · {p.get('flow') or '—'}/{p.get('mode') or '—'}</span>"
+            f"{reasons}"
+            f"<div style='color:#8b949e;font-size:11px;margin-top:3px'>entry {p.get('entry')} · stop {p.get('stop')}"
+            f" · tgt {tg}" + (f" · primary {pt}" if pt else "") +
+            f" · size× {p.get('size_x') or '—'} · hold {p.get('hold') or '—'}</div>"
+            f"<div style='color:#f0883e;font-size:11px'>✋ invalid: {inv.get('conditions', inv.get('cond', '—'))}"
+            f" (px {inv.get('price') or '—'})</div></div>")

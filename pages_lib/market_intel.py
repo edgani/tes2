@@ -38,6 +38,9 @@ def render(snap: dict):
             extra = (f" · BM {bm.get('regime')} {bm.get('flow_score')}" if bm.get("regime") else
                      f" · flow {f.get('type')}" if f.get("type") else "")
             st.caption(f"· **{r['ticker']}** {r.get('direction','')} conv {r.get('conviction')} · mode {r.get('market_mode','—')}{extra}")
+        if mod == "ihsg":
+            fa = [r["ticker"] for r in rows if (r.get("bm") or {}).get("false_accum")]
+            if fa: st.warning("⚠ FALSE-ACCUM traps: " + ", ".join(fa[:8]))
         st.divider()
 
     import importlib

@@ -75,6 +75,10 @@ def render(snap):
                    f" · pers {f.get('persistence','—')} (OHLCV proxy)")
         st.caption(f"response **{rz.get('response','—')}** (q {rz.get('quality','—')})")
         st.caption(f"crowding {crowd:.0f} · velocity {vel:+.2f}")
+        if bm.get("false_accum"):
+            st.warning("⚠ FALSE ACCUMULATION — LPM rising on liq_expand<1 → illiquid trap (doc-16)")
+        if bm.get("participation") is not None:
+            st.caption(f"participation quality (pressure breadth): {bm.get('participation'):+.2f}")
         if bm.get("regime"):
             st.caption(f"BM **{bm.get('regime')}** score {bm.get('flow_score')} · Par_F {bm.get('par_f','—')}"
                        f" · Corr_F {bm.get('corr_f','—')} · EFD {bm.get('efd','—')}")

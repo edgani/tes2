@@ -23,6 +23,7 @@ from .engines.response_zone import run_response_zone
 from .engines.internals import run_internals, run_horizon
 from .engines.surge import run_surge
 from .engines.crash_bottom import run_crash_bottom
+from .meta.final_desk import build_final_desk
 from .meta.decision_stack import build_decision_stack
 from .engines.leadlag_discovery import run_leadlag_discovery
 from .engines.rotation import run_rotation
@@ -138,6 +139,8 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
                         "intensity": [float(x) for x in _pf["intensity"]]}
                 except Exception:
                     pass
+                a["bm"]["false_accum"] = bool(float(a["bm"].get("lpm_slope_z", 0) or 0) > 0.5 and float(a["bm"].get("liq_expand", 1) or 1) < 0.98)
+                a["bm"]["participation"] = a["bm"].get("breadth")
                 a["flow01"] = float(np.clip(0.5 + (bm["flow_score"] / 200.0) * bm["confidence"], 0.0, 1.0))
                 if a.get("broker_sign", 0) == 0:
                     a["broker_sign"] = 1 if bm["flow_score"] > 20 else -1 if bm["flow_score"] < -20 else 0
@@ -252,7 +255,7 @@ def run_gcfis(prices: dict, bench: pd.Series, regime_posterior: dict,
     for _t, _a in per_ticker.items():
         _a["surge"] = run_surge(_a, systemic, internals)
     crash = run_crash_bottom(systemic, internals, per_ticker)
-    return {"ok": True, "drivers": drivers, "internals": internals, "crash": crash, "systemic_flat": systemic,
+    return {"ok": True, "drivers": drivers, "internals": internals, "crash": crash, "systemic_flat": systemic, "final_desk": build_final_desk(ranking, per_ticker, regime_posterior),
             "systemic": {"fragility": frag, "shock": shock, "forward_macro": fwd, "liquidity": liq,
                          "flow": flow, "theme": theme, "bottleneck": bott, "bottleneck_migration": bott_mig, "crypto": crypto, "cross_asset": cross},
             "ranking": {"regime_weights": ranking["regime_weights"], "systemic_stress": ranking["systemic_stress"],

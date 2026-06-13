@@ -93,4 +93,7 @@ class FlowRegimeEngine:
         return {"regime": r["regime_name"], "flow_score": round(float(r["flow_score"]), 2),
                 "confidence": round(float(r["confidence"]), 2), "par_f": round(float(r["par_f_s"]), 4),
                 "corr_f": round(float(r["corr_f_s"]), 4), "efd": round(float(r["efd"]), 4),
-                "lpm": round(float(r["lpm"]), 2), "lpm_valid": int(r["lpm_valid"])}
+                "lpm": round(float(r["lpm"]), 2), "lpm_valid": int(r["lpm_valid"]),
+                "liq_expand": round(float(np.nan_to_num(r["liq_expand"], nan=1.0)), 3),
+                "lpm_slope_z": round(float(np.nan_to_num(r["lpm_slope_z"])), 2),
+                "breadth": round(float(np.nan_to_num(r["breadth"])), 2)}

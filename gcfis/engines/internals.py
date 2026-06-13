@@ -24,7 +24,11 @@ _PAIRS = [
     ("semis/utilities", ["SOXX", "SMH"], ["XLU"], "AI risk appetite vs defensive rotation"),
     ("btc/dxy", ["BTCUSD", "BTC-USD", "BTCUSDT"], ["DXY", "DX=F"], "liquidity dependence (inverse)"),
     ("oil/energy-eq", ["USOIL", "WTI", "CL=F", "XTIUSD"], ["XLE"], "physical vs equity confirmation"),
+    ("copper/gold", ["HG=F", "COPPER", "XCUUSD", "CPER"], ["XAUUSD", "GC=F", "GOLD"], "growth vs fear (doc-18)"),
+    ("btc/eth", ["BTCUSD", "BTC-USD", "BTCUSDT"], ["ETHUSD", "ETH-USD", "ETHUSDT"], "quality vs alt-risk preference"),
 ]
+
+_SINGLES = [("audjpy", ["AUDJPY", "AUDJPY=X"], "global risk appetite (carry barometer, doc-18)")]
 
 def _close(v):
     if hasattr(v, "columns") and "Close" in getattr(v, "columns", []):
@@ -63,6 +67,13 @@ def run_internals(prices: dict, bench=None) -> dict:
                 out["divergences"].append(f"index +{bz:.1%} on weak breadth {out['breadth']:.0%} — narrow fragility")
             if out["top5_share"] and out["top5_share"] > 0.75 and tot >= 8:
                 out["divergences"].append(f"top-5 names = {out['top5_share']:.0%} of positive 20d returns — concentration risk")
+    for name, aliases, note in _SINGLES:
+        s = _find(prices, aliases)
+        if s is None or len(s) < 150:
+            continue
+        ch = s.pct_change(20)
+        z = float((ch.iloc[-1] - ch.tail(120).mean()) / (ch.tail(120).std() or 1e-9))
+        out["pairs"].append({"pair": name, "z20": round(z, 2), "note": note})
     for name, aal, bal, note in _PAIRS:
         A, B = _find(prices, aal), _find(prices, bal)
         if A is None or B is None:

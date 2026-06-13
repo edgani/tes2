@@ -25,6 +25,10 @@ def render(snap: dict):
                     z = r.get("reading_z")
                     zs = f"z {z:+.2f}" if z is not None else f"feed: {r['series']}"
                     st.markdown(f"<span style='font-size:.78rem'>[{r['horizon']}·{'★'*r['strength']}] {r['factor']} ({'+' if r['sign']>0 else '−'}) — <b style='color:{col}'>{zs}</b><br><span style='color:#8b949e'>{r['note']}</span></span>", unsafe_allow_html=True)
+    with st.expander("🕸 causal propagation map (doc-16)", expanded=True):
+        from components.causal_map import render_causal_map
+        if not render_causal_map(st, out):
+            st.caption("causal map unavailable (plotly)")
     intern = out.get("internals") or {}
     if intern.get("pairs") or intern.get("breadth") is not None:
         with st.expander("🔀 relative & internals (doc-12: relative > absolute)"):

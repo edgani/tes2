@@ -40,7 +40,23 @@ def render(snap):
     for dv in (intern.get("divergences") or []): st.warning("🧬 " + dv)
     st.divider()
 
-    # ---- OPPORTUNITY MATRIX + FRAGILITY STACK ----
+    from components.causal_map import render_causal_map
+    st.markdown("### 🕸 Causal propagation")
+    render_causal_map(st, out)
+    st.divider()
+
+    desk = out.get("final_desk") or {}
+    picks = desk.get("picks", [])
+    st.markdown(f"## 🎯 FINAL DESK — Top {len(picks)} · the only list that matters")
+    st.caption(desk.get("note", ""))
+    from gcfis.dashboard import desk_card_html
+    for pk in picks: st.markdown(desk_card_html(pk), unsafe_allow_html=True)
+    if not picks: st.caption("no pick clears the bar in this regime — standing aside IS the call")
+    if desk.get("rejected_summary"):
+        st.caption("rejected: " + " · ".join(f"{k} ×{v}" for k, v in desk["rejected_summary"].items()))
+    st.divider()
+
+    # ---- OPPORTUNITY MATRIX + FRAGILITY STACK (secondary inventory) ----
     rows_all = [x for b in ("master_long", "master_short", "deferred_longs", "avoided_long_only")
                 for x in rank.get(b, [])]
     longs = rank.get("master_long", []); shorts = rank.get("master_short", [])
