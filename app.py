@@ -100,13 +100,18 @@ def main():
         # ── HERO: Hedgeye quad (left, large) + risk stress bars (right) ──
         hero_l, hero_r = st.columns([0.62, 0.38])
         with hero_l:
-            st.markdown(f"#### 🧭 GIP Quad — **{qe['structural_quad']} · {qe['structural_name']}** "
-                        f"→ implied **{qe['where_it_goes']['implied_next']}**")
+            href = qe.get("hedgeye_ref", {})
+            st.markdown(f"#### 🧭 GIP Quad — Quarterly (climate) **{qe['quarterly_quad']} · {qe['quarterly_name']}** "
+                        f"· Monthly (weather) **{qe['monthly_quad']} · {qe['monthly_name']}** → implied **{qe['where_it_goes']['implied_next']}**")
             try:
                 st.plotly_chart(quad_map_figure(qe), use_container_width=True, config={"displayModeBar": False})
             except Exception:
-                st.caption(f"quad: {qe['structural_quad']} {qe['structural_name']} (plotly unavailable)")
+                st.caption(f"quad: {qe['quarterly_quad']} {qe['quarterly_name']} (plotly unavailable)")
             st.caption(f"GROC {qe['GROC']:+.2f} · IROC {qe['IROC']:+.2f} · {qe['provenance']}")
+            if href:
+                match = "✓ aligned" if href.get("quad") == qe["quarterly_quad"] else "⚠ DIVERGES from market-implied"
+                st.caption(f"📌 Hedgeye reference ({href.get('as_of')}): **{href.get('quad')} {href.get('name')}** "
+                           f"→ {href.get('next')} · {href.get('note')} — {match}")
         with hero_r:
             scol = "#3fb950" if shock["shock_prob"] < 40 else "#d29922" if shock["shock_prob"] < 65 else "#f85149"
             st.markdown(big_metric_html("Shock pressure", shock["shock_prob"],

@@ -65,3 +65,15 @@ target engine (entry.py) to be wired next. Engines mapped to ChatGPT audit in th
 
 Tests: 5/5 groups pass. DEPLOY NOTE: set Streamlit Cloud Main file path = macroregime_v2/app.py + Reboot,
 else changes won't show (this was likely why "nothing changed").
+
+## quad fix + Hedgeye reality check (this pass)
+- Researched Hedgeye's ACTUAL current state: Q1→Q3 transition early 2026; now **Quad 3 Stagflation**
+  (Q2/Q3 2026, oil-shock driven), → Quad 4 in November; gold #1. Source: Hedgeye insights Mar–Apr 2026.
+- Quad engine rewritten to Hedgeye's REAL structure: **Quarterly (climate, 63d RoC) + Monthly (weather,
+  21d RoC)** — two genuine horizons, not 3 identical fakes.
+- Visual fixed: active quadrant highlighted (border + brighter fill + ● badge), markers clamped in-bounds
+  (the off-screen/behind-axis bug is gone), Quarterly solid + Monthly hollow at real positions.
+- **Hedgeye reference shown on Command Center with a divergence flag.** Our quad is MARKET-IMPLIED (RoC of
+  growth/inflation proxies); Hedgeye's is a GDP/CPI economic nowcast — they can diverge, and the app now
+  shows both so you're never misled. Market-implied vs Hedgeye calibration is an open item (needs your real
+  data + ideally the GDP/CPI nowcast inputs to align the proxy).

@@ -16,111 +16,136 @@ _QM_NAME = {"Q1": "Q1 · Goldilocks", "Q2": "Q2 · Reflation", "Q3": "Q3 · Stag
 _NAMES = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
 
 
-def _rs(a: pd.Series, b: pd.Series, n: int = 63):
-    """relative-strength ratio z-ish change (a vs b), as a forward_macro growth input."""
-    r = (a / a.shift(n)) / (b / b.shift(n))
-    return r.dropna()
+def _norm_series(parts: list[pd.Series]) -> pd.Series | None:
+    """Average of rolling-z-normalized component series → a single composite series."""
+    zs = []
+    for s in parts:
+        s = pd.to_numeric(s, errors="coerce").dropna()
+        if len(s) < 40:
+            continue
+        m = s.rolling(60, min_periods=20).mean(); sd = s.rolling(60, min_periods=20).std()
+        zs.append(((s - m) / sd.replace(0, np.nan)).clip(-3, 3))
+    if not zs:
+        return None
+    df = pd.concat(zs, axis=1)
+    return df.mean(axis=1).dropna()
+
+
+# Hedgeye reference (external, dated — update via search; app can't fetch paywalled Hedgeye live).
+HEDGEYE_REF = {"quad": "Q3", "name": "Stagflation", "next": "Q4 (Nov)",
+              "as_of": "Apr 2026", "note": "growth slowing + oil-shock inflation; gold #1 allocation"}
 
 
 def compute_quad(prices: dict, macro: dict | None = None) -> dict:
-    """Build the Hedgeye quad (structural/monthly/global) from the LIVE universe + FRED macro.
-    Growth inputs: copper/gold (XLU defensive vs SMR/cyclical proxy), SOX (NVDA), small-cap, curve.
-    Inflation inputs: commodities (oil, gold), breakeven (real-yield inverse from FRED if present).
-    Returns the qe dict the quad map + explainer consume. Honest: market-implied proxy, labeled."""
-    from engines.forward_macro import run_forward_macro
+    """Hedgeye-style GIP: QUARTERLY quad (climate, ~63d RoC) + MONTHLY quad (weather, ~21d RoC),
+    genuinely distinct windows. x=inflation RoC, y=growth RoC. Market-implied (labeled) — shown
+    alongside the Hedgeye economic-nowcast reference so divergence is visible, not hidden."""
+    macro = macro or {}
 
     def px(t):
         df = prices.get(t)
-        if df is None:
-            return None
-        return pd.to_numeric(df["Close"], errors="coerce").dropna() if "Close" in df else None
+        return pd.to_numeric(df["Close"], errors="coerce").dropna() if (df is not None and "Close" in df) else None
 
-    nvda, xlu, smr, gold, oil, tlt, btc = (px(t) for t in
-                                           ("NVDA", "XLU", "SMR", "XAUUSD", "USOIL", "TLT", "BTCUSD"))
-    g_in, i_in = {}, {}
+    nvda, xlu, smr, gold, oil, tlt = (px(t) for t in ("NVDA", "XLU", "SMR", "XAUUSD", "USOIL", "TLT"))
+    # growth proxy series: cyclical-vs-defensive RS + oil demand + curve(FRED) + (−)real-yield level
+    g_parts, i_parts = [], []
     if smr is not None and gold is not None:
-        g_in["copper_gold"] = _rs(smr, gold)               # cyclical vs gold = growth proxy
+        g_parts.append((smr / gold))
     if nvda is not None and xlu is not None:
-        g_in["sox"] = _rs(nvda, xlu)                       # semis vs utility = growth proxy
+        g_parts.append((nvda / xlu))
     if oil is not None:
-        g_in["oil"] = oil.pct_change().rolling(20).mean().dropna()
-        i_in["commodities"] = oil.pct_change(20).dropna()
+        g_parts.append(oil); i_parts.append(oil)
     if gold is not None:
-        i_in["breakeven"] = gold.pct_change(20).dropna()
-    # FRED-real inputs when present
-    macro = macro or {}
+        i_parts.append(gold)
     if macro.get("curve_10y2y", {}).get("series") is not None:
-        g_in["curve_10_2"] = macro["curve_10y2y"]["series"]
+        g_parts.append(macro["curve_10y2y"]["series"])
     if macro.get("real_yield_10y", {}).get("series") is not None:
-        i_in["wage_proxy"] = -macro["real_yield_10y"]["series"]   # inverse real yield ~ infl pressure
+        i_parts.append(-macro["real_yield_10y"]["series"])   # lower real yield ~ inflation pressure
 
-    fm = run_forward_macro(g_in, i_in)
-    q = fm["forward_quad"]
-    groc, iroc = fm["GROC"], fm["IROC"]
-    # implied-next: nudge by RoC momentum sign
-    nq = q
-    if q == "Q3" and groc > -0.1:
-        nq = "Q2"
-    elif q == "Q2" and iroc < 0:
-        nq = "Q1"
-    elif q == "Q4" and groc > 0:
-        nq = "Q1"
-    return {"structural_quad": q, "structural_name": _NAMES[q],
-            "monthly_quad": q, "monthly_name": _NAMES[q],
-            "global_quad": q, "global_name": _NAMES[q],
-            "GROC": groc, "IROC": iroc, "MIFG": fm["MIFG"], "MII": fm["MII"],
-            "growth_components": fm["growth_components"], "infl_components": fm["infl_components"],
+    G = _norm_series(g_parts); I = _norm_series(i_parts)
+
+    def roc(series, w):
+        if series is None or len(series) <= w:
+            return 0.0
+        d = series.diff(w).dropna()
+        if len(d) < 5:
+            return 0.0
+        sd = d.tail(120).std() or 1.0
+        return float(np.tanh((d.iloc[-1] / sd)))          # −1..1, RoC strength
+
+    groc_q, iroc_q = roc(G, 63), roc(I, 63)               # quarterly = climate
+    groc_m, iroc_m = roc(G, 21), roc(I, 21)               # monthly  = weather
+
+    def to_quad(g, i):
+        return ("Q2" if g >= 0 and i >= 0 else "Q1" if g >= 0 and i < 0
+                else "Q3" if g < 0 and i >= 0 else "Q4")
+    names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+    q_quad, m_quad = to_quad(groc_q, iroc_q), to_quad(groc_m, iroc_m)
+
+    # implied-next: monthly (fast) leads the quarterly (slow) → where the climate is heading
+    nq = m_quad if m_quad != q_quad else q_quad
+
+    return {"quarterly_quad": q_quad, "quarterly_name": names[q_quad],
+            "monthly_quad": m_quad, "monthly_name": names[m_quad],
+            "structural_quad": q_quad, "structural_name": names[q_quad],   # back-compat
+            "GROC": round(groc_q, 2), "IROC": round(iroc_q, 2),
+            "q_pos": (round(iroc_q, 2), round(groc_q, 2)), "m_pos": (round(iroc_m, 2), round(groc_m, 2)),
             "where_it_goes": {"implied_next": nq},
-            "provenance": "market-implied (forward_macro) + FRED curve/real-yield where REAL"}
+            "hedgeye_ref": HEDGEYE_REF,
+            "provenance": "market-implied RoC (forward proxies + FRED where REAL) — differs from Hedgeye GDP/CPI nowcast"}
 
 
 def quad_map_figure(qe: dict, explanation: str | None = None):
-    """v40's 2×2 Hedgeye GIP map (x=inflation RoC, y=growth RoC) + transition arrow. Real position
-    from GROC/IROC when available."""
+    """2×2 Hedgeye GIP map (x=inflation RoC, y=growth RoC). Highlights the ACTIVE (quarterly) quad,
+    plots Quarterly (climate) + Monthly (weather) markers at their real RoC positions (clamped to
+    stay readable), and the transition arrow. No more off-screen markers / fake duplicate horizons."""
     import plotly.graph_objects as go
-    sq = qe.get("structural_quad", "Q3"); mq = qe.get("monthly_quad", sq)
-    gq = qe.get("global_quad", sq); nq = (qe.get("where_it_goes", {}) or {}).get("implied_next", sq)
-    groc, iroc = qe.get("GROC"), qe.get("IROC")
+
+    def _c(v, lo=-0.82, hi=0.82):
+        return max(lo, min(hi, float(v)))
+
+    qq = qe.get("quarterly_quad", qe.get("structural_quad", "Q3"))
+    mq = qe.get("monthly_quad", qq)
+    nq = (qe.get("where_it_goes", {}) or {}).get("implied_next", qq)
+    qx, qy = (_c(qe.get("q_pos", (0, 0))[0]), _c(qe.get("q_pos", (0, 0))[1]))
+    mx, my = (_c(qe.get("m_pos", (0, 0))[0]), _c(qe.get("m_pos", (0, 0))[1]))
 
     fig = go.Figure()
     rects = {"Q1": (-1, 0, 0, 1), "Q2": (0, 1, 0, 1), "Q3": (0, 1, -1, 0), "Q4": (-1, 0, -1, 0)}
     for q, (x0, x1, y0, y1) in rects.items():
-        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, line={"width": 0},
-                      fillcolor=_QM_FILL[q], layer="below")
-        _nx, _ny = {"Q1": (-0.5, 0.88), "Q2": (0.5, 0.88), "Q3": (0.5, -0.12), "Q4": (-0.5, -0.12)}[q]
-        fig.add_annotation(x=_nx, y=_ny, text=_QM_NAME[q], showarrow=False, font={"size": 11, "color": "#8b949e"})
+        active = (q == qq)
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1,
+                      line={"width": 2.5, "color": "#f0b429"} if active else {"width": 0},
+                      fillcolor=(_QM_FILL[q].replace("0.16", "0.42").replace("0.15", "0.40")
+                                 if active else _QM_FILL[q]), layer="below")
+        _nx, _ny = {"Q1": (-0.5, 0.9), "Q2": (0.5, 0.9), "Q3": (0.5, -0.1), "Q4": (-0.5, -0.1)}[q]
+        fig.add_annotation(x=_nx, y=_ny, text=(f"● {_QM_NAME[q]}" if active else _QM_NAME[q]),
+                           showarrow=False, font={"size": 12 if active else 10,
+                                                  "color": "#f0b429" if active else "#8b949e"})
     fig.add_shape(type="line", x0=0, x1=0, y0=-1, y1=1, line={"color": "#30363d", "width": 1})
     fig.add_shape(type="line", x0=-1, x1=1, y0=0, y1=0, line={"color": "#30363d", "width": 1})
 
-    # live position from RoC if present, else quad centers
-    if groc is not None and iroc is not None and (abs(groc) + abs(iroc)) > 1e-6:
-        live = (float(np.clip(iroc, -0.9, 0.9)), float(np.clip(groc, -0.9, 0.9)))
-        base = {"S": live, "M": live, "G": _QM_CENTER.get(gq, live)}
-    else:
-        base = {"S": _QM_CENTER.get(sq, (0.5, -0.5)), "M": _QM_CENTER.get(mq, (0.5, -0.5)),
-                "G": _QM_CENTER.get(gq, (0.5, -0.5))}
-    offs = {"S": (-0.14, -0.11), "M": (0.14, 0.11), "G": (0.14, -0.11)}
-    pos = {k: (base[k][0] + offs[k][0], base[k][1] + offs[k][1]) for k in base}
-    if nq != sq:
-        nx, ny = _QM_CENTER.get(nq, pos["M"]); sx, sy = pos["S"]
-        fig.add_annotation(x=nx, y=ny, ax=sx, ay=sy, xref="x", yref="y", axref="x", ayref="y",
-                           showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=2,
-                           arrowcolor="#f0b429", opacity=0.85)
-    for k, sym, col, lbl, q in [("S", "circle-open", "#e6edf3", "Structural", sq),
-                                ("M", "x", "#39d0d8", "Monthly", mq),
-                                ("G", "diamond-open", "#f0b429", "Global", gq)]:
-        px_, py_ = pos[k]
-        fig.add_trace(go.Scatter(x=[px_], y=[py_], mode="markers+text", text=[lbl],
-                                 textposition="bottom center", textfont={"color": col, "size": 10},
-                                 marker={"symbol": sym, "size": 20, "color": col, "line": {"color": col, "width": 3}},
-                                 hovertemplate=f"{lbl}: {q}<extra></extra>", showlegend=False))
+    # transition arrow quarterly → implied-next quad center
+    if nq != qq:
+        nx, ny = _QM_CENTER.get(nq, (mx, my))
+        fig.add_annotation(x=nx * 0.6, y=ny * 0.6, ax=qx, ay=qy, xref="x", yref="y", axref="x", ayref="y",
+                           showarrow=True, arrowhead=2, arrowsize=1.3, arrowwidth=2, arrowcolor="#f0b429", opacity=0.8)
+    # markers: Quarterly (climate) solid, Monthly (weather) hollow — at real, clamped positions
+    fig.add_trace(go.Scatter(x=[qx], y=[qy], mode="markers+text", text=["Quarterly"], textposition="bottom center",
+                             textfont={"color": "#e6edf3", "size": 11},
+                             marker={"symbol": "circle", "size": 22, "color": "#e6edf3", "line": {"color": "#0d1117", "width": 2}},
+                             hovertemplate=f"Quarterly (climate): {qq}<extra></extra>", showlegend=False))
+    fig.add_trace(go.Scatter(x=[mx], y=[my], mode="markers+text", text=["Monthly"], textposition="top center",
+                             textfont={"color": "#39d0d8", "size": 11},
+                             marker={"symbol": "x", "size": 18, "color": "#39d0d8", "line": {"color": "#39d0d8", "width": 2}},
+                             hovertemplate=f"Monthly (weather): {mq}<extra></extra>", showlegend=False))
     fig.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                       font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-                      margin={"t": 8, "b": 30, "l": 46, "r": 10}, height=300, showlegend=False,
-                      xaxis={"title": {"text": "← Disinflation   Inflation (RoC)   Inflation ↑ →",
+                      margin={"t": 10, "b": 32, "l": 48, "r": 12}, height=320, showlegend=False,
+                      xaxis={"title": {"text": "← Disinflation     Inflation (RoC)     Inflation ↑ →",
                                        "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                              "zeroline": False, "showgrid": False, "tickvals": []},
-                      yaxis={"title": {"text": "← Growth ↓   Growth (RoC)   Growth ↑ →",
+                      yaxis={"title": {"text": "← Growth ↓     Growth (RoC)     Growth ↑ →",
                                        "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                              "zeroline": False, "showgrid": False, "tickvals": []})
     return fig
