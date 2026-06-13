@@ -66,17 +66,23 @@ def run_entry(price: pd.Series, direction: str, dealer: dict | None = None,
     if gregime == "momentum" and etype in {"PULLBACK", "MEAN_REVERSION", "BOUNCE_SHORT"}:
         warn = "fading a negative-gamma (momentum) tape — risky"
 
-    # risk-range stop/target
+    # structure-based stop/target → R/R is a REAL filter (varies by chart), sized per entry type
+    swing_lo10, swing_hi20, swing_lo20 = px.tail(10).min(), px.tail(20).max(), px.tail(20).min()
+    rng = max(swing_hi20 - swing_lo20, atr)
     if direction == "long":
         if etype in {"PULLBACK", "MEAN_REVERSION"}:
-            entry_px = min(p, ref - 0.5 * sigma); stop = entry_px - k_atr * atr; target = ref + 1.0 * sigma
-        else:
-            entry_px = p; stop = p - k_atr * atr; target = p + 2.0 * sigma
+            entry_px = min(p, ref - 0.5 * sigma); stop = swing_lo10 - 0.8 * atr; target = swing_hi20
+        elif etype == "BREAKOUT":
+            entry_px = p; stop = swing_hi20 - 1.0 * atr; target = p + 1.2 * rng        # measured move
+        else:  # CONTINUATION
+            entry_px = p; stop = swing_lo10 - 0.5 * atr; target = swing_hi20 + 0.6 * rng
     else:
         if etype in {"BOUNCE_SHORT", "MEAN_REVERSION"}:
-            entry_px = max(p, ref + 0.5 * sigma); stop = entry_px + k_atr * atr; target = ref - 1.0 * sigma
-        else:
-            entry_px = p; stop = p + k_atr * atr; target = p - 2.0 * sigma
+            entry_px = max(p, ref + 0.5 * sigma); stop = swing_hi20 + 0.8 * atr; target = swing_lo20
+        elif etype == "BREAKDOWN":
+            entry_px = p; stop = swing_lo20 + 1.0 * atr; target = p - 1.2 * rng
+        else:  # CONTINUATION (short)
+            entry_px = p; stop = swing_hi20 + 0.5 * atr; target = swing_lo20 - 0.6 * rng
     risk = abs(entry_px - stop); reward = abs(target - entry_px)
     rr = round(reward / risk, 2) if risk > 0 else 0.0
     if rr < rr_min: valid = False; warn = (warn + "; " if warn else "") + f"R/R {rr} < {rr_min}"

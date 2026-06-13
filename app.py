@@ -82,6 +82,21 @@ def main():
         shock = run_shock_engine(ctx.get("macro", {}), ctx.get("vix_term", {}), breadth=internals.get("breadth"))
         qe = compute_quad(prices, ctx.get("macro", {}))
 
+        # regime policy: dynamic weighting + HARD override (systemic credit → longs off)
+        from core.regime_policy import classify_regime, apply_hard_override
+        from engines.ai_capex import run_ai_capex
+        from core.what_changed import snapshot_state, diff_state
+        ri = classify_regime(shock, qe)
+        picks, override_note = apply_hard_override(picks, ri)
+        ai = run_ai_capex(prices)
+        if override_note:
+            st.error(override_note)
+
+        # WHAT CHANGED (vs last refresh, stored in session)
+        cur = snapshot_state(qe, shock, picks, ai)
+        deltas = diff_state(st.session_state.get("_prev_state"), cur)
+        st.session_state["_prev_state"] = cur
+
         # ── HERO: Hedgeye quad (left, large) + risk stress bars (right) ──
         hero_l, hero_r = st.columns([0.62, 0.38])
         with hero_l:
@@ -103,6 +118,21 @@ def main():
             st.markdown(big_metric_html("Crash (cohort)", crash["pressure"],
                                         f"{crash['type']} · {crash['bottom']['state']}"), unsafe_allow_html=True)
         st.caption("shock basis: " + shock["basis"])
+        st.markdown(f"**Regime:** `{ri['regime']}` — {ri['why']}"
+                    + (f"  ·  **AI-cycle {ai['ai_cycle_score']}** ({ai['phase']})" if ai.get("ok") else ""))
+        st.divider()
+
+        # ── WHAT CHANGED TODAY (delta cards) ──
+        st.markdown("##### ⚡ What changed")
+        wc_cols = st.columns(min(3, len(deltas)) or 1)
+        _wc_col = {"regime": "#d29922", "shock": "#f85149", "crash": "#f85149", "ai": "#39d0d8",
+                   "new_pick": "#3fb950", "dropped": "#8b949e", "crowding": "#d29922"}
+        for i, c in enumerate(deltas[:6]):
+            with wc_cols[i % len(wc_cols)]:
+                col = _wc_col.get(c["kind"], "#6e7681")
+                st.markdown(f"<div style='border-left:3px solid {col};background:#12161c;border-radius:6px;"
+                            f"padding:6px 10px;margin:3px 0;font-size:12px;color:#c9d1d9'>{c['text']}</div>",
+                            unsafe_allow_html=True)
         st.divider()
 
         # ── WHAT CHANGED (delta-lite) + FINAL DESK ──
@@ -137,11 +167,23 @@ def main():
 
     with tabs[2]:
         st.subheader("Narratives & Bottlenecks")
-        st.caption("lifecycle + supply-chain graph + second-order winners — next pass")
+        from core.supply_chain import run_supply_chain
+        from core.visuals import stress_bar_html
+        sc = run_supply_chain()
+        st.markdown(f"##### 🔗 Bottleneck network (Citrini) — tightest: **{sc['tightest']}** · "
+                    f"hidden second-order winner: **{sc['hidden_winner']}**")
+        st.caption("pressure = tightness × propagation centrality. Retail buys the obvious node; "
+                   "the hidden winner is high-pressure but downstream/overlooked.")
+        for n in sc["ranked"]:
+            nd = sc["nodes"][n]
+            tk = ", ".join(nd["tickers"][:4])
+            st.markdown(stress_bar_html(f"{n} ({tk})", nd["pressure"] * 100,
+                                        f"tight {nd['tightness']} · centrality {nd['centrality']}"),
+                        unsafe_allow_html=True)
+        st.divider()
+        st.markdown("**Surge pre-conditioning leaders (price-derived):**")
         top = sorted(((t, (a.get("surge") or {}).get("score", 0)) for t, a in per.items()), key=lambda kv: -kv[1])[:6]
-        st.markdown("**Surge pre-conditioning leaders (doc-20, OHLCV layers):**")
-        for t, s in top:
-            st.caption(f"· {t}: surge {s}")
+        st.caption(" · ".join(f"{t} {s}" for t, s in top))
 
     with tabs[3]:
         st.subheader("Market Intelligence — per-market state")

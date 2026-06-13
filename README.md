@@ -50,3 +50,18 @@ target engine (entry.py) to be wired next. Engines mapped to ChatGPT audit in th
   "🟢 LIVE — N/12 loaded" and engines run on real prices + FRED credit/NetLiq turns REAL.
 - Verify on deploy: top banner says LIVE (not DEMO) and FINAL DESK shows your real tickers.
   If FRED still times out, click Reload (the failure is no longer cached).
+
+## build-queue executed (this pass) — 5 items shipped + tested
+1. ✅ entry.py wired → execution RR ENFORCED ≥1.5 (structure-based stop/target). The RR<1 bug is gone;
+   gate now filters (demo: 3/12 clear, PLTR RR 4.99 / USDJPY 2.55 / XLU 9.74).
+2. ✅ Hard regime override + dynamic weighting (core/regime_policy.py) — systemic credit (REAL, >0.85)
+   → LONGS_DISABLED banner + long picks suppressed. Weight profile per regime replaces static _W.
+3. ✅ AI-capex engine (core/../engines/ai_capex.py — Leopold) — compute/power/infra RS → 0-100 cycle
+   score + phase. Demo: 73.9 ACCELERATION, compute leading, power lagging (narrow leadership flagged).
+4. ✅ Bottleneck NETWORK (core/supply_chain.py — Citrini) — AI dependency graph, pressure = tightness ×
+   centrality, surfaces the HIDDEN winner (demo: power). Rendered in Narratives & Bottlenecks tab.
+5. ✅ What-changed daily-delta (core/what_changed.py) — quad shift / shock jump / crash-type / new-dropped
+   picks / crowding. Rendered as delta cards on Command Center.
+
+Tests: 5/5 groups pass. DEPLOY NOTE: set Streamlit Cloud Main file path = macroregime_v2/app.py + Reboot,
+else changes won't show (this was likely why "nothing changed").

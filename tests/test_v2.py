@@ -70,8 +70,35 @@ def t_bandarmetrics_calibration():
     print(f"  BANDARMETRICS: calibrate recovered hidden window={r['window']} (err {r['total_abs_error']})  OK")
 
 
+def t_queue_engines():
+    """entry RR>=1.5 gate, hard credit override, AI-capex, supply-chain network, what-changed."""
+    from core.pipeline import run_pipeline, demo_universe
+    from core.regime_policy import classify_regime, apply_hard_override
+    from engines.ai_capex import run_ai_capex
+    from core.supply_chain import run_supply_chain
+    from core.what_changed import snapshot_state, diff_state
+    u = demo_universe(); out = run_pipeline(u)
+    assert all(p["rr"] >= 1.5 for p in out["picks"]), "RR<1.5 leaked"
+    # hard override
+    sysk = {"components": {"credit_stress": 0.92, "liquidity_contract": 0.8, "breadth_weak": 0.6, "vix_term": 0.6},
+            "provenance": {"credit_stress": "REAL"}, "crash_type": "SYSTEMIC"}
+    ri = classify_regime(sysk, {"structural_quad": "Q4"})
+    assert ri["hard_override"] == "LONGS_DISABLED"
+    kept, note = apply_hard_override([{"side": "long", "ticker": "X"}, {"side": "short", "ticker": "Y"}], ri)
+    assert len(kept) == 1 and kept[0]["side"] == "short" and note
+    # ai-capex + supply-chain
+    ai = run_ai_capex(u); assert ai["ok"] and 0 <= ai["ai_cycle_score"] <= 100
+    sc = run_supply_chain(); assert sc["ok"] and sc["hidden_winner"] and sc["tightest"]
+    # what-changed
+    s1 = snapshot_state({"structural_quad": "Q2"}, {"shock_prob": 40, "crash_type": "LOW"}, [], ai)
+    d = diff_state(s1, snapshot_state({"structural_quad": "Q3"}, {"shock_prob": 55, "crash_type": "CYCLICAL"}, [], ai))
+    assert any("quad shifted" in c["text"] for c in d)
+    print(f"  QUEUE: RR-gate ok ({len(out['picks'])} picks) · override ok · AI {ai['ai_cycle_score']} · "
+          f"bottleneck hidden={sc['hidden_winner']} · what-changed ok  OK")
+
+
 if __name__ == "__main__":
-    for fn in (t_fred_parser_and_macro, t_shock_engine_real_vs_proxy, t_typef_parser_reuse, t_bandarmetrics_calibration):
+    for fn in (t_fred_parser_and_macro, t_shock_engine_real_vs_proxy, t_typef_parser_reuse, t_bandarmetrics_calibration, t_queue_engines):
         fn()
     print("-" * 60)
     print("V2 FOUNDATION TESTS PASSED")

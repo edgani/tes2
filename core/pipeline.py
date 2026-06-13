@@ -106,16 +106,26 @@ def _verdict(a: dict):
 
     if len(reasons) < 2:
         return None
-    risk = abs(entry - stop); reward = abs(target - entry)
+
+    # EXECUTION via entry.py (Hedgeye risk-range, gamma-aware, enforces RR >= 1.5) — fixes RR<1
+    from engines.entry import run_entry
+    ex = run_entry(close, side, dealer=a.get("dealer"), liquidity_score=55.0,
+                   rr_min=1.5, long_only=(a.get("market") == "idx"))
+    if not ex.get("ok") or not ex.get("valid"):
+        return None                                  # no valid execution (e.g. RR<1.5) → not a pick
+    entry, stop, target, rr = ex["entry_px"], ex["stop"], ex["target"], ex["rr"]
+    risk, reward = abs(entry - stop), abs(target - entry)
     if risk <= 0:
         return None
     conv = float(np.clip(45 + 0.30 * (align - 50) + 0.20 * (surge - 50) + 30 * np.tanh(rs * 3), 0, 100))
     p = conv / 100.0
     ev = round(100.0 * (p * reward - (1 - p) * risk) / entry, 2)
-    return {"side": side, "conviction": round(conv, 1), "ev": ev, "entry": entry, "stop": stop,
-            "target": target, "rr": round(reward / risk, 2), "reasons": reasons[:5],
-            "stage": a.get("stage"), "crowding": round(crowd, 0),
-            "invalidation": {"price": stop, "conditions": "close beyond stop"}}
+    if ex.get("warning"):
+        reasons.append("⚠ " + ex["warning"])
+    return {"side": side, "conviction": round(conv, 1), "ev": ev, "entry": round(entry, 4),
+            "stop": round(stop, 4), "target": round(target, 4), "rr": rr, "entry_type": ex.get("entry_type"),
+            "reasons": reasons[:5], "stage": a.get("stage"), "crowding": round(crowd, 0),
+            "invalidation": {"price": round(stop, 4), "conditions": "close beyond stop"}}
 
 
 def run_pipeline(prices: dict, bench=None, data_ctx: dict | None = None) -> dict:
