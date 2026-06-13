@@ -8,7 +8,7 @@ classification needs tick/L2 — outputs are labelled proxy-grade, never present
   NEUTRAL           : none of the above"""
 from __future__ import annotations
 import numpy as np, pandas as pd
-from ..core.change_core import pct_rank
+from core.change_core import pct_rank
 
 def run_flow_type(price, volume=None) -> dict:
     px = pd.to_numeric(pd.Series(price), errors="coerce").dropna()
