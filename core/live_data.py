@@ -16,6 +16,8 @@ DEFAULT_UNIVERSE = {
     "NVDA": "NVDA", "PLTR": "PLTR", "SMR": "SMR", "TLT": "TLT", "XLU": "XLU",
     "BTCUSD": "BTC-USD", "ETHUSD": "ETH-USD", "XAUUSD": "GC=F", "USOIL": "CL=F",
     "USDJPY=X": "USDJPY=X", "BREN.JK": "BREN.JK", "DMAS.JK": "DMAS.JK",
+    # GIP-quad inputs (so forward_macro gets its real factors, not proxies):
+    "SPY": "SPY", "COPPER": "HG=F", "SMH": "SMH", "IWM": "IWM", "UUP": "UUP",
 }
 _STOOQ = {  # fallback symbols (Yahoo-reject names)
     "NVDA": "nvda.us", "PLTR": "pltr.us", "SMR": "smr.us", "TLT": "tlt.us", "XLU": "xlu.us",

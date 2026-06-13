@@ -77,3 +77,13 @@ else changes won't show (this was likely why "nothing changed").
   growth/inflation proxies); Hedgeye's is a GDP/CPI economic nowcast — they can diverge, and the app now
   shows both so you're never misled. Market-implied vs Hedgeye calibration is an open item (needs your real
   data + ideally the GDP/CPI nowcast inputs to align the proxy).
+
+## quad now uses v40's formula (not a hand-rolled proxy) — answer to "is v40's math wrong?"
+v40's quad formula is SOUND — I had drifted to a cruder hand-rolled version with impoverished inputs.
+Now compute_quad uses forward_macro's actual WEIGHTS + composite, fed the real GIP factors:
+  growth: copper/gold, oil, SMH/SPY (semis-RS), HY-OAS⁻¹, IWM/SPY (small-cap), DXY⁻¹, 10y, curve
+  inflation: BREAKEVEN (FRED T10YIE — the missing piece), commodities, DXY⁻¹
+Added to universe: SPY, COPPER(HG=F), SMH, IWM, UUP. Added to FRED: T10YIE breakeven, DGS10.
+Proven: in a Q3 oil-shock scenario it now correctly returns Q3 Stagflation (matches Hedgeye), where
+the old proxy returned Q1. On sandbox demo (no COPPER/SMH/FRED) it falls back to proxies + shows the
+Hedgeye divergence flag; on Cloud deploy it gets the real factors.

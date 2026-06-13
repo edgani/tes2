@@ -25,6 +25,8 @@ FRED_SERIES = {
     "BAMLH0A0HYM2": "HY OAS credit spread (%)",      # crash frontrunner
     "BAMLC0A0CM": "IG OAS credit spread (%)",
     "DFII10": "10y real yield (%)",
+    "T10YIE": "10y breakeven inflation (%)",          # GIP inflation input (catches oil shocks)
+    "DGS10": "10y nominal yield (%)",                 # GIP growth input
     "T10Y2Y": "10y-2y curve (%)",
     "VIXCLS": "VIX spot",
 }
@@ -71,6 +73,10 @@ def derive_macro(df: pd.DataFrame) -> dict:
         put("ig_oas", df["BAMLC0A0CM"].ffill().dropna(), "IG OAS credit spread (%)")
     if "DFII10" in have:
         put("real_yield_10y", df["DFII10"].ffill().dropna(), "10y real yield (%)")
+    if "T10YIE" in have:
+        put("breakeven_10y", df["T10YIE"].ffill().dropna(), "10y breakeven inflation (%)")
+    if "DGS10" in have:
+        put("y10_nominal", df["DGS10"].ffill().dropna(), "10y nominal yield (%)")
     if "T10Y2Y" in have:
         put("curve_10y2y", df["T10Y2Y"].ffill().dropna(), "10y-2y curve (%)")
     if "VIXCLS" in have:

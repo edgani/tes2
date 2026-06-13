@@ -37,32 +37,50 @@ HEDGEYE_REF = {"quad": "Q3", "name": "Stagflation", "next": "Q4 (Nov)",
 
 
 def compute_quad(prices: dict, macro: dict | None = None) -> dict:
-    """Hedgeye-style GIP: QUARTERLY quad (climate, ~63d RoC) + MONTHLY quad (weather, ~21d RoC),
-    genuinely distinct windows. x=inflation RoC, y=growth RoC. Market-implied (labeled) — shown
-    alongside the Hedgeye economic-nowcast reference so divergence is visible, not hidden."""
+    """Hedgeye-style GIP using v40's forward_macro WEIGHTS + composite (not a hand-rolled proxy).
+    Quarterly (climate, 63d RoC) + Monthly (weather, 21d RoC) of the weighted growth/inflation
+    composites. Inflation now includes the FRED breakeven series, so oil-shock inflation registers.
+    Market-implied (labeled) + Hedgeye economic-nowcast reference shown alongside."""
+    from engines.forward_macro import _G, _I, _composite
     macro = macro or {}
 
     def px(t):
         df = prices.get(t)
         return pd.to_numeric(df["Close"], errors="coerce").dropna() if (df is not None and "Close" in df) else None
 
-    nvda, xlu, smr, gold, oil, tlt = (px(t) for t in ("NVDA", "XLU", "SMR", "XAUUSD", "USOIL", "TLT"))
-    # growth proxy series: cyclical-vs-defensive RS + oil demand + curve(FRED) + (−)real-yield level
-    g_parts, i_parts = [], []
-    if smr is not None and gold is not None:
-        g_parts.append((smr / gold))
-    if nvda is not None and xlu is not None:
-        g_parts.append((nvda / xlu))
-    if oil is not None:
-        g_parts.append(oil); i_parts.append(oil)
-    if gold is not None:
-        i_parts.append(gold)
-    if macro.get("curve_10y2y", {}).get("series") is not None:
-        g_parts.append(macro["curve_10y2y"]["series"])
-    if macro.get("real_yield_10y", {}).get("series") is not None:
-        i_parts.append(-macro["real_yield_10y"]["series"])   # lower real yield ~ inflation pressure
+    def ms(key):
+        v = macro.get(key, {})
+        return v.get("series") if isinstance(v, dict) else None
 
-    G = _norm_series(g_parts); I = _norm_series(i_parts)
+    cu, gold, oil, smh, spy, iwm, uup = (px(t) for t in ("COPPER", "XAUUSD", "USOIL", "SMH", "SPY", "IWM", "UUP"))
+    # growth inputs (forward_macro._G keys) — real GIP factors where available
+    g_in = {}
+    if cu is not None and gold is not None: g_in["copper_gold"] = cu / gold
+    if oil is not None: g_in["oil"] = oil
+    if smh is not None and spy is not None: g_in["sox"] = smh / spy
+    if ms("hy_oas") is not None: g_in["hy_oas_inv"] = -ms("hy_oas")
+    if iwm is not None and spy is not None: g_in["smallcap_ratio"] = iwm / spy
+    if uup is not None: g_in["dxy_inv"] = -uup
+    if ms("y10_nominal") is not None: g_in["y10"] = ms("y10_nominal")
+    if ms("curve_10y2y") is not None: g_in["curve_10_2"] = ms("curve_10y2y")
+    # inflation inputs (forward_macro._I keys) — breakeven is the key fix
+    i_in = {}
+    if ms("breakeven_10y") is not None: i_in["breakeven"] = ms("breakeven_10y")
+    if oil is not None: i_in["commodities"] = oil
+    if uup is not None: i_in["dxy_inv"] = -uup
+
+    # FALLBACK proxies if the real GIP inputs aren't loaded (e.g. sandbox demo)
+    if len(g_in) < 2:
+        nvda, xlu, smr = (px(t) for t in ("NVDA", "XLU", "SMR"))
+        if smr is not None and gold is not None: g_in["copper_gold"] = smr / gold
+        if nvda is not None and xlu is not None: g_in["sox"] = nvda / xlu
+        if oil is not None: g_in.setdefault("oil", oil)
+    if len(i_in) < 1 and oil is not None:
+        i_in["commodities"] = oil
+        if gold is not None: i_in["breakeven"] = gold
+
+    _, gser, gc = _composite(g_in, _G)
+    _, iser, ic = _composite(i_in, _I)
 
     def roc(series, w):
         if series is None or len(series) <= w:
@@ -70,29 +88,28 @@ def compute_quad(prices: dict, macro: dict | None = None) -> dict:
         d = series.diff(w).dropna()
         if len(d) < 5:
             return 0.0
-        sd = d.tail(120).std() or 1.0
-        return float(np.tanh((d.iloc[-1] / sd)))          # −1..1, RoC strength
+        return float(np.tanh(d.iloc[-1] / (d.tail(120).std() or 1.0)))
 
-    groc_q, iroc_q = roc(G, 63), roc(I, 63)               # quarterly = climate
-    groc_m, iroc_m = roc(G, 21), roc(I, 21)               # monthly  = weather
+    groc_q, iroc_q = roc(gser, 63), roc(iser, 63)
+    groc_m, iroc_m = roc(gser, 21), roc(iser, 21)
 
     def to_quad(g, i):
         return ("Q2" if g >= 0 and i >= 0 else "Q1" if g >= 0 and i < 0
                 else "Q3" if g < 0 and i >= 0 else "Q4")
     names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
     q_quad, m_quad = to_quad(groc_q, iroc_q), to_quad(groc_m, iroc_m)
-
-    # implied-next: monthly (fast) leads the quarterly (slow) → where the climate is heading
     nq = m_quad if m_quad != q_quad else q_quad
+    n_real = sum(1 for k in ("hy_oas_inv", "y10", "curve_10_2") if k in g_in) + (1 if "breakeven" in i_in and ms("breakeven_10y") is not None else 0)
 
     return {"quarterly_quad": q_quad, "quarterly_name": names[q_quad],
             "monthly_quad": m_quad, "monthly_name": names[m_quad],
-            "structural_quad": q_quad, "structural_name": names[q_quad],   # back-compat
+            "structural_quad": q_quad, "structural_name": names[q_quad],
             "GROC": round(groc_q, 2), "IROC": round(iroc_q, 2),
             "q_pos": (round(iroc_q, 2), round(groc_q, 2)), "m_pos": (round(iroc_m, 2), round(groc_m, 2)),
-            "where_it_goes": {"implied_next": nq},
-            "hedgeye_ref": HEDGEYE_REF,
-            "provenance": "market-implied RoC (forward proxies + FRED where REAL) — differs from Hedgeye GDP/CPI nowcast"}
+            "where_it_goes": {"implied_next": nq}, "hedgeye_ref": HEDGEYE_REF,
+            "growth_components": gc, "infl_components": ic,
+            "provenance": f"forward_macro composite (v40 weights) · {n_real} REAL macro inputs · "
+                          f"{'real GIP factors' if len(g_in) >= 4 else 'proxy inputs (deploy for full factors)'}"}
 
 
 def quad_map_figure(qe: dict, explanation: str | None = None):
