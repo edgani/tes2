@@ -189,3 +189,42 @@ def rr_backtest(data_by_market, fwd=10):
     return {"n": int(len(arr)), "mean": round(float(arr.mean()), 2), "median": round(float(np.median(arr)), 2),
             "hit": round(float((arr > 0).mean() * 100.0), 1), "std": round(float(arr.std()), 2),
             "fwd": fwd, "by_market": by_market}
+
+
+def regime_read(rows, netliq_chg=None):
+    """Honest regime/risk read from MARKET INTERNALS + NetLiq (the full GIP quad is
+    feed-gated). Axes: risk-appetite (breadth/RS) × liquidity (NetLiq Δ). Thermometers 0-100."""
+    b = breadth(rows)
+    rs = [r["rs63"] for r in rows if r["rs63"] is not None]
+    med_rs = float(np.median(rs)) if rs else 0.0
+    growth = max(-1.0, min(1.0, (b["pct_above_200"] - 50) / 50 * 0.6 + np.tanh(med_rs / 15.0) * 0.4))
+    liq = 0.0 if netliq_chg is None else float(max(-1.0, min(1.0, np.tanh(netliq_chg / 50.0))))
+    vol = [r["vol_state"] for r in rows if r.get("vol_state")]
+    med_vol = float(np.median(vol)) if vol else 1.0
+    bear_pct = b["bearish"] / max(b["n"], 1) * 100
+    crash = max(0, min(100, bear_pct * 0.5 + max(0, 50 - b["pct_above_50"]) * 0.6 + max(0, (med_vol - 1.0)) * 120))
+    liq_stress = 0 if netliq_chg is None else max(0, min(100, 50 - float(np.tanh(netliq_chg / 50.0)) * 50))
+    longs = sum(1 for r in rows if r["side"] == "LONG")
+    shorts = sum(1 for r in rows if r["side"] == "SHORT")
+    positioning = max(0, min(100, 50 + (shorts - longs) * 8))
+    return {"growth": round(growth, 2), "liquidity": round(liq, 2), "crash": round(crash),
+            "liq_stress": round(liq_stress), "positioning": round(positioning),
+            "breadth_det": round(max(0, min(100, 100 - b["health"]))), "health": b["health"], "med_vol": round(med_vol, 2)}
+
+
+def hot_now(rows):
+    """Notable names right now (computable) — leader/laggard/most-stretched/best-dip."""
+    def pos(r):
+        rng = max(r["trr"] - r["lrr"], 1e-9)
+        return (r["close"] - r["lrr"]) / rng
+    out = {}
+    rsv = [r for r in rows if r["rs63"] is not None]
+    if rsv:
+        out["leader"] = max(rsv, key=lambda r: r["rs63"])
+        out["laggard"] = min(rsv, key=lambda r: r["rs63"])
+    if rows:
+        out["stretched"] = max(rows, key=pos)
+    dips = [r for r in rows if r["formation"] == "BULLISH"]
+    if dips:
+        out["dip"] = min(dips, key=pos)
+    return out
