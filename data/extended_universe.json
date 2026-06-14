@@ -1,0 +1,998 @@
+{
+  "_schema_version": "v38",
+  "_description": "Tickers auto-discovered by alpha engines but not in static config. Loaded as Tier 2.",
+  "tier_2_discovered": {
+    "AMD": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 2,
+        "role": "2nd-source accelerators + custom silicon + networking",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "AVGO": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 2,
+        "role": "2nd-source accelerators + custom silicon + networking",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "MRVL": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 2,
+        "role": "2nd-source accelerators + custom silicon + networking",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "ALAB": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 2,
+        "role": "2nd-source accelerators + custom silicon + networking",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "MU": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 3,
+        "role": "HBM Memory bottleneck",
+        "expected_multiplier": [
+          2,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "HYNIX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 3,
+        "role": "HBM Memory bottleneck",
+        "expected_multiplier": [
+          2,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "LITE": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 3,
+        "role": "AI Optical Interconnect (800G/1.6T modules)",
+        "expected_multiplier": [
+          3,
+          8
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "COHR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 3,
+        "role": "AI Optical Interconnect (800G/1.6T modules)",
+        "expected_multiplier": [
+          3,
+          8
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "CIEN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 3,
+        "role": "AI Optical Interconnect (800G/1.6T modules)",
+        "expected_multiplier": [
+          3,
+          8
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "AMAT": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Wafer fab + advanced packaging tools",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "LRCX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Wafer fab + advanced packaging tools",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "KLAC": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Wafer fab + advanced packaging tools",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "ASML": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Wafer fab + advanced packaging tools",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "BESI": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Wafer fab + advanced packaging tools",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "AXTI": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Substrate materials + glass + InP",
+        "expected_multiplier": [
+          5,
+          15
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "GLW": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Substrate materials + glass + InP",
+        "expected_multiplier": [
+          5,
+          15
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "MTRN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Substrate materials + glass + InP",
+        "expected_multiplier": [
+          5,
+          15
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "TROX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Substrate materials + glass + InP",
+        "expected_multiplier": [
+          5,
+          15
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "JEN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 4,
+        "role": "Substrate materials + glass + InP",
+        "expected_multiplier": [
+          5,
+          15
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "SIVE": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 5,
+        "role": "Co-Packaged Optics / CW lasers / TFLN modulators",
+        "expected_multiplier": [
+          10,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "LWLG": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 5,
+        "role": "Co-Packaged Optics / CW lasers / TFLN modulators",
+        "expected_multiplier": [
+          10,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "POET": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 5,
+        "role": "Co-Packaged Optics / CW lasers / TFLN modulators",
+        "expected_multiplier": [
+          10,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "AYAR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_compute_cascade",
+      "alpha_context": {
+        "chain_name": "AI Compute Cascade",
+        "tier": 5,
+        "role": "Co-Packaged Optics / CW lasers / TFLN modulators",
+        "expected_multiplier": [
+          10,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "VST": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 1,
+        "role": "Utility with existing nuclear/gas capacity",
+        "expected_multiplier": [
+          2,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "CEG": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 1,
+        "role": "Utility with existing nuclear/gas capacity",
+        "expected_multiplier": [
+          2,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "GEV": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 1,
+        "role": "Utility with existing nuclear/gas capacity",
+        "expected_multiplier": [
+          2,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "ETN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 2,
+        "role": "Grid equipment, switchgear, transformers",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "VRT": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 2,
+        "role": "Grid equipment, switchgear, transformers",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "EMR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 2,
+        "role": "Grid equipment, switchgear, transformers",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "PWR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 2,
+        "role": "Grid equipment, switchgear, transformers",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "LNG": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "LNG export for behind-the-meter gas",
+        "expected_multiplier": [
+          1.5,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "CQP": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "LNG export for behind-the-meter gas",
+        "expected_multiplier": [
+          1.5,
+          4
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "CCJ": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "URA": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "URNM": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "DNN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "NXE": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "UEC": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 3,
+        "role": "Uranium spot + miners",
+        "expected_multiplier": [
+          2,
+          6
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "LEU": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 4,
+        "role": "Enrichment monopoly (LEU) + SMR vendors (BWXT)",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "BWXT": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_power_cascade",
+      "alpha_context": {
+        "chain_name": "AI Power & Grid Cascade",
+        "tier": 4,
+        "role": "Enrichment monopoly (LEU) + SMR vendors (BWXT)",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "BE": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 2,
+        "role": "Liquid cooling diversified",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "GTLS": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 2,
+        "role": "Liquid cooling diversified",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "WTS": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 2,
+        "role": "Liquid cooling diversified",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "NX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 3,
+        "role": "Cooling tower + thermal management",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "TT": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 3,
+        "role": "Cooling tower + thermal management",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "AOS": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:ai_cooling_cascade",
+      "alpha_context": {
+        "chain_name": "AI Cooling & Water Cascade",
+        "tier": 3,
+        "role": "Cooling tower + thermal management",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "SNDK": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:nand_memory_cycle_sndk",
+      "alpha_context": {
+        "chain_name": "NAND Memory Cycle + AI Storage (SNDK Case Study)",
+        "tier": 1,
+        "role": "NAND/HDD specialists (pure-play)",
+        "expected_multiplier": [
+          5,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "WDC": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:nand_memory_cycle_sndk",
+      "alpha_context": {
+        "chain_name": "NAND Memory Cycle + AI Storage (SNDK Case Study)",
+        "tier": 1,
+        "role": "NAND/HDD specialists (pure-play)",
+        "expected_multiplier": [
+          5,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "STX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:nand_memory_cycle_sndk",
+      "alpha_context": {
+        "chain_name": "NAND Memory Cycle + AI Storage (SNDK Case Study)",
+        "tier": 1,
+        "role": "NAND/HDD specialists (pure-play)",
+        "expected_multiplier": [
+          5,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "LLY": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 1,
+        "role": "Drug makers (duopoly)",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "NVO": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 1,
+        "role": "Drug makers (duopoly)",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "VKTX": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 2,
+        "role": "Next-gen GLP-1 candidates",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "AMGN": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 2,
+        "role": "Next-gen GLP-1 candidates",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "PFE": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 2,
+        "role": "Next-gen GLP-1 candidates",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "BERY": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Packaging glass + injection devices",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "AMCR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Packaging glass + injection devices",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "GFF": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Packaging glass + injection devices",
+        "expected_multiplier": [
+          1.5,
+          3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "WW": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Behavior change beneficiaries (weight loss, fitness)",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "PLNT": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Behavior change beneficiaries (weight loss, fitness)",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "HIMS": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Behavior change beneficiaries (weight loss, fitness)",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "TDOC": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 3,
+        "role": "Behavior change beneficiaries (weight loss, fitness)",
+        "expected_multiplier": [
+          2,
+          5
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "NTR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 4,
+        "role": "Food industry impact (reduced consumption)",
+        "expected_multiplier": [
+          0.7,
+          1.3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "ADM": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 4,
+        "role": "Food industry impact (reduced consumption)",
+        "expected_multiplier": [
+          0.7,
+          1.3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "MDLZ": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:glp1_obesity_cascade",
+      "alpha_context": {
+        "chain_name": "GLP-1 Obesity Drug Cascade",
+        "tier": 4,
+        "role": "Food industry impact (reduced consumption)",
+        "expected_multiplier": [
+          0.7,
+          1.3
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    },
+    "UUUU": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:nuclear_renaissance",
+      "alpha_context": {
+        "chain_name": "Nuclear Renaissance Cascade",
+        "tier": 2,
+        "role": "Junior uranium miners",
+        "expected_multiplier": [
+          5,
+          30
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "HIGH"
+    },
+    "MIR": {
+      "discovered_date": "2026-05-22",
+      "source": "chain:nuclear_renaissance",
+      "alpha_context": {
+        "chain_name": "Nuclear Renaissance Cascade",
+        "tier": 3,
+        "role": "SMR vendors with orders",
+        "expected_multiplier": [
+          3,
+          10
+        ]
+      },
+      "last_fetched": null,
+      "fetch_priority": "MEDIUM"
+    }
+  },
+  "tier_3_user_requested": {},
+  "fetch_failed": {}
+}

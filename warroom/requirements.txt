@@ -1,0 +1,11 @@
+# War Room (warroom/app.py) — core runtime deps
+streamlit>=1.32
+pandas>=2.0
+numpy>=1.24
+yfinance>=0.2.40
+
+# GCFIS engines used by stubbed tabs (install when wiring tabs 2/4/5)
+scipy>=1.10
+scikit-learn>=1.3
+statsmodels>=0.14
+hmmlearn>=0.3
