@@ -249,5 +249,7 @@ def compute_risk_range(df, ticker=None, use_skew=True, smooth=True, smooth_bars=
             "trade_trr": [round(float(x), 4) if pd.notna(x) else None for x in trade_trr],
             "trend_lrr": [round(float(x), 4) if pd.notna(x) else None for x in trend_lrr],
             "trend_trr": [round(float(x), 4) if pd.notna(x) else None for x in trend_trr],
+            "bull": [1 if bool(x) else 0 for x in bull],
+            "bear": [1 if bool(x) else 0 for x in bear],
         },
     }
