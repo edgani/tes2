@@ -72,7 +72,8 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     #    Calibrated to bandarmetrics' 4 reference tickers: BBCA shows price↓ while LPM↑ (accumulation
     #    divergence) = textbook A/D Line. So LPM = EMA(cumsum(CLV×Vol)) — volume-based, NOT ×price.
     vwap = (typ * v).rolling(vwap_win).sum() / v.rolling(vwap_win).sum().replace(0, np.nan)
-    lpm = _ema(adl, lpm_smooth)
+    _mfv_value = clv * v * typ  # LPM FIX: value-based (x price), not volume-only
+    lpm = _ema(_mfv_value.cumsum(), lpm_smooth)
 
     # ── DTE / Real DTE: |ADL| over average daily $-volume ──
     adv = (v * typ).rolling(adv_win).mean()
