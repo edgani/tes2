@@ -332,23 +332,8 @@ def render(snap: dict):
     else:
         filtered.sort(key=lambda e: -_ups_of(e))
 
-    # FINAL WARROOM FILTERING — force competition between tickers.
-    # Alpha Center should surface only highest-conviction asymmetric setups,
-    # NOT dump every passing name.
-    TOP_CONVICTION = 5
-    TOP_WATCHLIST = 10
-
-    conviction_bucket = filtered[:TOP_CONVICTION]
-    watchlist_bucket = filtered[TOP_CONVICTION:TOP_CONVICTION + TOP_WATCHLIST]
-    hidden_bucket = filtered[TOP_CONVICTION + TOP_WATCHLIST:]
-
-    st.caption(
-        f"🎯 {len(conviction_bucket)} HIGH-CONVICTION · "
-        f"{len(watchlist_bucket)} WATCHLIST · "
-        f"{len(hidden_bucket)} EMERGING/HIDDEN"
-        + (f" · ⏳ {len(no_data)} pending (no price)" if no_data else "")
-    )
-
+    st.caption(f"📊 **{len(filtered)}** ALPHA-grade (real asymmetric) · sorted: {sort_by}"
+               + (f" · ⏳ {len(no_data)} pending (no price)" if no_data else ""))
     # Demotion note — non-alpha names belong in their market tab (Alpha Center = alpha only)
     if demoted:
         by_mkt = {}
@@ -358,12 +343,8 @@ def render(snap: dict):
         st.caption(f"↘️ {len(demoted)} non-alpha (large-cap / &lt;100% asym) → trade di market tab → {note}")
     st.divider()
 
-    # ── RENDER CARDS — CONVICTION FIRST ──────────────────────────────────
-
-    st.markdown("## 🎯 Highest Conviction")
-    render_stream = conviction_bucket + watchlist_bucket
-
-    for entry in render_stream:
+    # ── RENDER CARDS — native Streamlit (no HTML escape issues) ──────────
+    for entry in filtered:
         ticker = entry["ticker"]
         cand = entry["candidate"]
         stars = _stars_html(cand.get("stars", 0))
