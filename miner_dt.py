@@ -57,6 +57,9 @@ ATP_RATIOS   = (0.618, 1.000, 1.618)                # alternate time projection
 
 # DTosc StochRSI parameter sets (a=RSI, b=Stoch, c=K smooth, d=D smooth)
 DTOSC_SETS = {1: (8, 5, 3, 3), 2: (13, 8, 5, 5), 3: (21, 13, 8, 8), 4: (34, 21, 13, 13)}
+# Miner's set-to-timeframe mapping (from the book): pick by the chart interval.
+INTERVAL_DTOSC_SET = {"1mo": 1, "1wk": 2, "1d": 2, "1h": 3, "60m": 3,
+                      "30m": 3, "15m": 4, "5m": 4}
 DTOSC_OB, DTOSC_OS = 75.0, 25.0
 
 # Weight for cluster scoring (Miner order: In-Ret > APP > Ex-Ret)
@@ -754,14 +757,17 @@ class Result:
     price_zones: list[dict] = field(default_factory=list)
     time_band_dates: Optional[tuple] = None
     time_cluster_dates: list = field(default_factory=list)
+    reversal_date: Optional[pd.Timestamp] = None
+    reversal_strength: Optional[int] = None
+    reversal_window: Optional[tuple] = None
     decision: dict = field(default_factory=dict)
     eow_kind: str = ""
 
 
 def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
             basis: str = "close", swing_pct: Optional[float] = None,
-            dtosc_set: int = 2, ma: str = "sma", htf: Optional[str] = None,
-            df: Optional[pd.DataFrame] = None,
+            dtosc_set: Optional[int] = None, ma: str = "ema",
+            htf: Optional[str] = None, df: Optional[pd.DataFrame] = None,
             resolved: Optional[str] = None) -> Result:
     # --- data ---
     asset = "custom"
@@ -777,6 +783,10 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
         raise ValueError(
             f"Data cuma {len(series)} bar — kependekan buat analisis (butuh ≥20). "
             f"Coba ticker lain, ganti Market, atau interval yang lebih besar.")
+
+    # auto-pick DTosc set from interval (Miner's set-to-timeframe mapping)
+    if dtosc_set is None:
+        dtosc_set = INTERVAL_DTOSC_SET.get(interval, 2)
 
     # --- DTosc current TF + DLB (second param set) ---
     a, b, c, d = DTOSC_SETS[dtosc_set]
@@ -832,19 +842,52 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
             if v is not None and np.isfinite(v):
                 proj_levels.append({"price": float(v), "label": f"{grp} {lbl}"})
 
-    # --- time band + ATP/TimeRet from the labeled swings ---
+    # --- TIME: Miner-style projected turning point = where projections cluster ---
+    # Sources: TimeRet + ATP of the labeled wave swings + prior CYCLE (L-L, H-H),
+    # all in trading-day counts, projected forward. Peak of the cluster = the
+    # single most-probable reversal date (Miner: reversals hit within ~1 bar).
+    n_bars = len(series)
+    future_idx = []
+    if primary and len(primary.skeleton) >= 2:
+        sk = primary.skeleton
+        anchor = sk[-1].idx                       # last confirmed pivot
+        for i in range(1, len(sk)):
+            dur = sk[i].idx - sk[i - 1].idx
+            if dur <= 0:
+                continue
+            for rt in (0.382, 0.50, 0.618, 1.0, 1.618):
+                future_idx.append(anchor + int(round(dur * rt)))
+    for seq in (highs, lows):                     # cycle projections
+        if len(seq) >= 2:
+            cyc = seq[-1].idx - seq[-2].idx
+            if cyc > 0:
+                for rt in (1.0, 1.618):
+                    future_idx.append(seq[-1].idx + int(round(cyc * rt)))
+    future_idx = [x for x in future_idx if x >= n_bars - 2]   # forward-looking only
+
+    reversal_date = reversal_strength = reversal_window = None
+    tcluster_dates = []
+    if future_idx:
+        win = 2 if interval in ("1d", "1h", "60m", "30m", "15m", "5m") else 1
+        # rank candidate dates by how many projections fall within +/- win
+        scored = {}
+        for x in set(future_idx):
+            scored[x] = sum(1 for y in future_idx if abs(y - x) <= win)
+        ranked = sorted(scored.items(), key=lambda kv: kv[1], reverse=True)
+        peak_idx, reversal_strength = ranked[0]
+        reversal_date = idx_to_date(series.index, peak_idx)
+        members = [y for y in future_idx if abs(y - peak_idx) <= win]
+        reversal_window = (idx_to_date(series.index, min(members)),
+                           idx_to_date(series.index, max(members)))
+        for bi, hits in ranked[:3]:
+            tcluster_dates.append((idx_to_date(series.index, bi), hits))
+
+    # Time Band (Bressert) kept as secondary range context
     tband = time_band(highs, lows)
     tband_dates = None
     if tband:
         tband_dates = (idx_to_date(series.index, tband[0]),
                        idx_to_date(series.index, tband[1]))
-    tcluster_dates = []
-    if primary and len(primary.proj_pivots) >= 3:
-        pp = primary.proj_pivots
-        tcomp = {"TimeRet": time_ret(pp[0].idx, pp[1].idx),
-                 "ATP": atp_time(pp[0].idx, pp[1].idx, pp[-1].idx)}
-        for bar_idx, hits in time_cluster(tcomp, win=1):
-            tcluster_dates.append((idx_to_date(series.index, bar_idx), hits))
 
     dec = decision_levels(primary, piv)
 
@@ -879,7 +922,9 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
         wave_dir=(primary.direction if primary else ""),
         wave_labels=wave_labels, dtosc_k=K, dtosc_d=D, proj_levels=proj_levels,
         price_zones=price_zones, time_band_dates=tband_dates,
-        time_cluster_dates=tcluster_dates, decision=dec, eow_kind=eow_kind,
+        time_cluster_dates=tcluster_dates, reversal_date=reversal_date,
+        reversal_strength=reversal_strength, reversal_window=reversal_window,
+        decision=dec, eow_kind=eow_kind,
     )
 
 
@@ -1071,15 +1116,36 @@ def _conf_color(c: str) -> str:
 
 
 def _target_zone(r):
-    """Best target zone with fallback: convergence > first zone > None."""
-    conv = [z for z in r.price_zones if z["groups"] >= 2]
-    if conv:
-        return conv[0]
-    return r.price_zones[0] if r.price_zones else None
+    """Direction-aware target: bottoms must be BELOW price, tops ABOVE.
+    Picks the strongest cluster in the correct direction (then nearest)."""
+    zones = r.price_zones
+    if not zones:
+        return None
+    last = r.last_close
+    pk, wd = r.proj_kind, r.wave_dir
+    want_below = ((pk == "eow5" and wd == "down") or (pk == "eowc" and wd == "down")
+                  or (pk == "thrust" and wd == "down"))
+    want_above = ((pk == "eow5" and wd == "up") or (pk == "eowc" and wd == "up")
+                  or (pk == "thrust" and wd == "up"))
+    conv = [z for z in zones if z["groups"] >= 2]
+    pool = conv if conv else zones
+    if want_below:
+        cand = [z for z in pool if z["mid"] < last * 0.999]
+        if cand:                                   # strongest, then nearest (highest mid)
+            return sorted(cand, key=lambda z: (z["groups"], z["score"], z["mid"]))[-1]
+    if want_above:
+        cand = [z for z in pool if z["mid"] > last * 1.001]
+        if cand:                                   # strongest, then nearest (lowest mid)
+            return sorted(cand, key=lambda z: (z["groups"], z["score"], -z["mid"]))[-1]
+    return pool[0]
 
 
 def _eta(r):
-    """Estimated reversal window with fallback: Time Band > cluster date > None."""
+    """Reversal window: cluster-peak window > Time Band > cluster date > None."""
+    if r.reversal_window:
+        return r.reversal_window
+    if r.reversal_date is not None:
+        return (r.reversal_date, r.reversal_date)
     if r.time_band_dates:
         return r.time_band_dates
     if r.time_cluster_dates:
@@ -1107,6 +1173,12 @@ def trade_plan(r) -> dict:
     else:
         zone_txt, target_num = "belum bisa dihitung", "—"
     eta_txt = f"{fmt_date(eta[0])} – {fmt_date(eta[1])}" if eta else "belum bisa dihitung"
+    if r.reversal_date is not None:
+        rev_date_txt = fmt_date(r.reversal_date)
+        strength_txt = (f" ({r.reversal_strength} proyeksi numpuk)"
+                        if r.reversal_strength and r.reversal_strength > 1 else "")
+    else:
+        rev_date_txt, strength_txt = (eta_txt.split(" – ")[0] if eta else "—"), ""
 
     expecting_top = (pk == "eow5" and wd == "up") or (pk == "eowc" and wd == "up")
     expecting_bottom = (pk == "eow5" and wd == "down") or (pk == "eowc" and wd == "down")
@@ -1122,7 +1194,8 @@ def trade_plan(r) -> dict:
     }.get((pk, wd), "struktur belum jelas — tunggu setup lebih rapi")
 
     p = {"now": wave_human, "target_price_txt": zone_txt, "target_num": target_num,
-         "eta_txt": eta_txt, "confidence": r.confidence, "trend_htf": htf,
+         "eta_txt": eta_txt, "rev_date_txt": rev_date_txt, "strength_txt": strength_txt,
+         "confidence": r.confidence, "trend_htf": htf,
          "expecting_top": expecting_top, "expecting_bottom": expecting_bottom,
          "is_thrust": is_thrust, "last": r.last_close}
     p["topbottom"] = ("PUNCAK (TOP)" if expecting_top else
@@ -1189,12 +1262,12 @@ def trade_plan(r) -> dict:
 
 _CIRCLED = {"0": "⓪", "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤",
             "5?": "⑤", "A": "Ⓐ", "B": "Ⓑ", "C": "Ⓒ", "C?": "Ⓒ",
-            "D": "Ⓓ", "E": "Ⓔ", "x": "·", "→": "▲"}
+            "D": "Ⓓ", "E": "Ⓔ", "x": "·", "→": "▲", "→?": "▲"}
 
 
 def _plot(df, r):
-    """Miner-style 2-panel chart: candles + MAs + circled waves + labeled target
-    lines (price on right) + projection arrow with % + DTosc panel."""
+    """CLEAN Miner-style: candles + circled waves + ONE target line (price label)
+    + ONE reversal-date line (date label) + DTosc panel. No clutter."""
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
@@ -1205,102 +1278,73 @@ def _plot(df, r):
     last_x, last_y = df.index[-1], float(close.iloc[-1])
     gaps = pd.Series(df.index).diff().dropna()
     gap = gaps.median() if len(gaps) else pd.Timedelta(days=1)
-    future_x = last_x + gap * 8                       # empty space on the right
+    future_x = last_x + gap * 6
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.74, 0.26], vertical_spacing=0.04,
-                        subplot_titles=("Harga + Wave + Target", "DTosc (momentum)"))
+                        row_heights=[0.76, 0.24], vertical_spacing=0.04,
+                        subplot_titles=("", "DTosc (momentum)"))
 
-    # --- candles ---
+    # candles
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
         close=close, name="harga", increasing_line_color="#26a69a",
         decreasing_line_color="#ef5350", showlegend=False), row=1, col=1)
 
-    # --- moving averages (trend context) ---
-    for win, col in ((20, "#fdd835"), (50, "#42a5f5"), (100, "#66bb6a"),
-                     (200, "#ff9800")):
-        if len(close) >= win:
-            fig.add_trace(go.Scatter(
-                x=df.index, y=close.ewm(span=win, adjust=False).mean(),
-                line=dict(color=col, width=1), name=f"EMA{win}",
-                opacity=0.7), row=1, col=1)
-
-    # --- swing skeleton line + circled wave labels ---
+    # faint swing skeleton + circled wave labels
     if r.pivots:
         fig.add_trace(go.Scatter(
             x=[p.date for p in r.pivots], y=[p.price for p in r.pivots],
-            mode="lines", line=dict(color="#bdbdbd", width=1, dash="dot"),
+            mode="lines", line=dict(color="#90a4ae", width=1, dash="dot"),
             name="swing", showlegend=False), row=1, col=1)
     for i, w in enumerate(r.wave_labels):
-        is_current = (i == len(r.wave_labels) - 1)
+        is_cur = (i == len(r.wave_labels) - 1)
         lab = _CIRCLED.get(w["label"], w["label"])
-        col = "#69f0ae" if is_current else "#ff8a80"     # green current / red done
+        c = "#69f0ae" if is_cur else "#ff8a80"
         up = w["label"] in ("1", "3", "5", "5?", "B", "D")
         fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{lab}</b>",
-                           showarrow=False, font=dict(color=col, size=18),
-                           yshift=16 if up else -16, xref="x", yref="y")
+                           showarrow=False, font=dict(color=c, size=18),
+                           yshift=15 if up else -15, xref="x", yref="y")
 
-    # --- higher-degree context labels (start & current of the move) ---
-    if r.pivots and len(r.pivots) >= 2:
-        fig.add_annotation(x=r.pivots[0].date, y=r.pivots[0].price,
-                           text="<b>(start)</b>", showarrow=False,
-                           font=dict(color="#9e9e9e", size=11), yshift=-22,
-                           xref="x", yref="y")
-
-    # --- labeled target lines (price on the right edge) ---
-    drawn = []
-    levels = sorted(r.proj_levels, key=lambda x: x["price"])
-    for lv in levels:
-        price = lv["price"]
-        if any(abs(price - d) / max(abs(price), 1e-9) < 0.003 for d in drawn):
-            continue                                   # dedupe near-equal
-        if not (last_y * 0.55 < price < last_y * 1.7):  # keep near current range
-            continue
-        drawn.append(price)
-        above = price >= last_y
-        lc = "#26a69a" if above else "#ff9800"
-        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=price, y1=price,
-                      line=dict(color=lc, width=1, dash="dot"), opacity=0.55,
-                      xref="x", yref="y", layer="below")
-        fig.add_annotation(x=future_x, y=price, text=f"({price:.4g})",
-                           showarrow=False, xanchor="left", xshift=4,
-                           font=dict(color=lc, size=11), xref="x", yref="y")
-
-    # --- convergence zone(s): brighter band + 🎯 ---
-    for z in [zz for zz in r.price_zones if zz["groups"] >= 2][:2]:
+    # ===== ONE target line with PRICE label =====
+    z = _target_zone(r)
+    if z:
+        is_bottom = (r.wave_dir == "down") if r.proj_kind in ("eow5", "eowc") \
+            else (r.wave_dir == "up")  # thrust up = upside target
+        tag = "DASAR" if (z["mid"] < last_y) else "PUNCAK"
+        tcol = "#26a69a" if z["mid"] < last_y else "#ff5252"
         lo, hi = z["low"], max(z["high"], z["low"] * 1.0004)
-        fig.add_shape(type="rect", x0=df.index[0], x1=future_x, y0=lo, y1=hi,
-                      fillcolor="rgba(38,166,154,0.18)", line_width=0,
-                      xref="x", yref="y", layer="below")
-        fig.add_annotation(x=future_x, y=z["mid"], text="🎯 TARGET",
-                           showarrow=False, xanchor="left", xshift=4,
-                           font=dict(color="#26a69a", size=12, family="Arial Black"),
+        if abs(hi - lo) > 1e-9:
+            fig.add_shape(type="rect", x0=df.index[0], x1=future_x, y0=lo, y1=hi,
+                          fillcolor="rgba(38,166,154,0.10)" if z["mid"] < last_y
+                          else "rgba(239,83,80,0.10)", line_width=0,
+                          xref="x", yref="y", layer="below")
+        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=z["mid"], y1=z["mid"],
+                      line=dict(color=tcol, width=1.5, dash="dash"),
+                      xref="x", yref="y")
+        fig.add_annotation(x=future_x, y=z["mid"],
+                           text=f"🎯 {tag} ≈ {z['mid']:.6g}", showarrow=False,
+                           xanchor="left", xshift=4, bgcolor="rgba(0,0,0,0.55)",
+                           font=dict(color=tcol, size=13, family="Arial Black"),
                            xref="x", yref="y")
 
-    # --- projection arrow + % move ---
-    conv = [z for z in r.price_zones if z["groups"] >= 2]
-    tgt = conv[0]["mid"] if conv else (r.price_zones[0]["mid"] if r.price_zones else None)
-    if tgt is not None and last_y:
-        pct = (tgt - last_y) / last_y * 100.0
-        ac = "#42a5f5" if tgt >= last_y else "#ff5252"
-        fig.add_annotation(x=future_x, y=tgt, ax=future_x, ay=last_y,
-                           xref="x", yref="y", axref="x", ayref="y",
-                           showarrow=True, arrowhead=2, arrowsize=1.3,
-                           arrowwidth=3, arrowcolor=ac)
-        fig.add_annotation(x=future_x, y=(tgt + last_y) / 2.0,
-                           text=f"<b>{pct:+.1f}%</b>", showarrow=False, xshift=22,
-                           font=dict(color=ac, size=16),
-                           bgcolor="rgba(0,0,0,0.6)", xref="x", yref="y")
+    # ===== ONE reversal-date line with DATE label =====
+    if r.reversal_date is not None:
+        strg = f"  ({r.reversal_strength}×)" if (r.reversal_strength or 0) > 1 else ""
+        # shade the cluster window faintly
+        if r.reversal_window:
+            fig.add_vrect(x0=r.reversal_window[0], x1=r.reversal_window[1],
+                          fillcolor="rgba(66,135,245,0.10)", line_width=0,
+                          row=1, col=1)
+        fig.add_shape(type="line", x0=r.reversal_date, x1=r.reversal_date,
+                      y0=0, y1=1, yref="paper", xref="x",
+                      line=dict(color="#42a5f5", width=1.5, dash="dash"))
+        fig.add_annotation(x=r.reversal_date, y=1.0, yref="paper", xref="x",
+                           text=f"📅 Reversal {fmt_date(r.reversal_date)}{strg}",
+                           showarrow=False, yanchor="bottom", xanchor="center",
+                           font=dict(color="#42a5f5", size=12),
+                           bgcolor="rgba(0,0,0,0.55)")
 
-    # --- time band shading ---
-    if r.time_band_dates:
-        fig.add_vrect(x0=r.time_band_dates[0], x1=r.time_band_dates[1],
-                      fillcolor="rgba(66,135,245,0.12)", line_width=0,
-                      annotation_text="Time Band", annotation_position="top left",
-                      row=1, col=1)
-
-    # --- DTosc panel ---
+    # ===== DTosc panel =====
     if r.dtosc_k is not None:
         fig.add_hrect(y0=75, y1=100, fillcolor="rgba(239,83,80,0.12)",
                       line_width=0, row=2, col=1)
@@ -1310,20 +1354,71 @@ def _plot(df, r):
             fig.add_hline(y=yv, line_dash="dash", line_color=cc, line_width=1,
                           row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_k.index, y=r.dtosc_k.values,
-                                 line=dict(color="#42a5f5", width=1.6),
-                                 name="DTosc K"), row=2, col=1)
+                                 line=dict(color="#42a5f5", width=1.5),
+                                 name="K"), row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_d.index, y=r.dtosc_d.values,
-                                 line=dict(color="#ff7043", width=1.6),
-                                 name="DTosc D"), row=2, col=1)
+                                 line=dict(color="#ff7043", width=1.5),
+                                 name="D"), row=2, col=1)
         fig.update_yaxes(range=[0, 100], row=2, col=1)
 
-    fig.update_xaxes(range=[df.index[0], future_x + gap * 3])
-    fig.update_layout(height=680, template="plotly_dark",
+    fig.update_xaxes(range=[df.index[0], future_x + gap * 2])
+    fig.update_layout(height=620, template="plotly_dark",
                       xaxis_rangeslider_visible=False,
-                      margin=dict(l=0, r=0, t=28, b=0),
-                      legend=dict(orientation="h", y=1.05),
+                      margin=dict(l=0, r=0, t=30, b=0),
+                      legend=dict(orientation="h", y=1.04),
                       hovermode="x unified")
     return fig
+
+
+def _tf_status(series, setn: int, ma: str = "ema") -> dict:
+    a, b, c, d = DTOSC_SETS[setn]
+    if series is None or len(series) < a + b + c + d:
+        return {"dir": "n/a", "zone": "n/a", "cross": None, "K": None, "D": None}
+    K, D = dtosc(series, a, b, c, d, ma)
+    return dtosc_status(K, D)
+
+
+def dtf_guidance(rows: list) -> tuple:
+    """Miner Dual Time Frame: direction from Weekly+Daily, entry from 4H."""
+    d = {r["tf"]: r for r in rows}
+    wk = d.get("Weekly", {}).get("dir")
+    dl = d.get("Daily", {}).get("dir")
+    h4 = d.get("4H", {})
+    big = wk if (wk in ("BULL", "BEAR") and wk == dl) else None
+    h4txt = (f" Sekarang 4H: {h4.get('dir')}/{h4.get('zone')}."
+             if h4.get("dir") not in (None, "n/a") else "")
+    if big == "BULL":
+        head = "📈 ARAH BESAR: NAIK  (Weekly + Daily sama-sama bull)"
+        entry = ("Cari posisi BELI (long). Entry: tunggu 4H balik bullish (DTosc cross "
+                 "naik dari area oversold) searah trend besar." + h4txt)
+    elif big == "BEAR":
+        head = "📉 ARAH BESAR: TURUN  (Weekly + Daily sama-sama bear)"
+        entry = ("Cari posisi JUAL/SHORT. Entry: tunggu 4H balik bearish (DTosc cross "
+                 "turun dari area overbought) searah trend besar." + h4txt)
+    else:
+        head = f"⚖️ ARAH BESAR: CAMPUR  (Weekly={wk} vs Daily={dl})"
+        entry = ("Weekly & Daily belum searah — paling aman TUNGGU sampai align, "
+                 "atau ikut Daily dengan size kecil." + h4txt)
+    return head, entry
+
+
+def multi_tf_view(ticker: str, market: str, ma: str = "ema") -> tuple:
+    """DTosc status on Weekly / Daily / 4H for one ticker (best-effort fetch)."""
+    cands, asset, _ = normalize_ticker(ticker, market)
+    specs = [("Weekly", "1wk", 2), ("Daily", "1d", 2), ("4H", "1h", 3)]
+    rows = []
+    for name, iv, setn in specs:
+        try:
+            df, _ = fetch_data(list(cands), iv)
+            s = df["Close"].copy()
+            s.index = pd.DatetimeIndex(s.index)
+            if iv == "1h":
+                s = s.resample("4h").last().dropna()
+            st = _tf_status(s, setn, ma)
+        except Exception as e:  # noqa: BLE001
+            st = {"dir": "n/a", "zone": "n/a", "cross": None, "err": str(e)[:50]}
+        rows.append({"tf": name, "set": setn, **st})
+    return rows, asset
 
 
 def run_app():
@@ -1350,9 +1445,13 @@ def run_app():
                                      "Weekly (1wk) untuk swing/posisi. Pilih 1wk untuk "
                                      "timeframe besar.")
         c1, c2 = st.columns(2)
-        dtosc_set = c1.selectbox("DTosc set", [1, 2, 3, 4], index=1)
-        ma = c2.selectbox("DTosc MA", ["sma", "ema"], index=0,
-                          help="calibrate to Miner's chart")
+        set_choice = c1.selectbox("DTosc set", ["Auto", 1, 2, 3, 4], index=0,
+                                  help="Auto = pilih dari interval (Miner mapping). "
+                                       "Daily/Weekly→2, H1→3, M15→4.")
+        dtosc_set = None if set_choice == "Auto" else int(set_choice)
+        ma = c2.selectbox("DTosc MA", ["ema", "sma"], index=0,
+                          help="EMA = default versi ThinkScript (match chart Miner). "
+                               "Kalibrasi ke chart asli kalau perlu.")
         mode = st.radio("Pivot threshold", ["Auto (ATR)", "Custom"], horizontal=True)
         swing_pct = st.slider("Swing %", 0.5, 10.0, 3.0, 0.1) \
             if mode == "Custom" else None
@@ -1441,9 +1540,11 @@ def run_app():
     b.metric(f"Perkiraan harga {p['topbottom'].split()[0].lower()}",
              f"≈ {p['target_num']}",
              help=f"Zona target: {p['target_price_txt']}")
-    c.metric("Perkiraan tanggal", p["eta_txt"], help="Jendela waktu reversal (Time Band)")
+    c.metric("Perkiraan tanggal reversal", p["rev_date_txt"],
+             help=f"Jendela: {p['eta_txt']}. Makin banyak proyeksi numpuk = makin kuat.")
     st.markdown(f"💰 **Perkiraan harga {p['topbottom']}:** {p['target_price_txt']}  "
-                f"&nbsp;|&nbsp; 📅 **Perkiraan waktu:** {p['eta_txt']}")
+                f"&nbsp;|&nbsp; 📅 **Perkiraan tanggal reversal:** {p['rev_date_txt']}"
+                f"{p['strength_txt']}  (jendela {p['eta_txt']})")
 
     # the actionable box
     if p["expecting_bottom"] or (p["is_thrust"] and r.wave_dir == "up"):
@@ -1472,18 +1573,46 @@ def run_app():
 
     # ---------- chart (price + waves + zones + DTosc) ----------
     st.markdown("### 📈 Chart")
-    st.caption("**Atas:** candle + EMA (garis tren) + label wave bulet ①②③④⑤ / ⒶⒷⒸ "
-               "(merah = wave selesai, hijau = wave berjalan) + garis target berlabel "
-               "harga di kanan + 🎯 zona konvergensi + panah % = perkiraan arah & besar "
-               "gerak + Time Band (area biru = perkiraan waktu reversal). "
-               "**Bawah: DTosc** — garis di area merah (>75) = jenuh beli, "
-               "area hijau (<25) = jenuh jual.")
+    st.caption("**Atas:** candle + wave bulet ①②③④⑤ / ⒶⒷⒸⒹⒺ (merah=selesai, "
+               "hijau=berjalan) + **garis 🎯 = target harga top/bottom** + "
+               "**garis biru 📅 = perkiraan tanggal reversal** (×N = berapa proyeksi "
+               "waktu numpuk di situ). **Bawah: DTosc** (>75 jenuh beli, <25 jenuh jual).")
     fig = _plot(df, r)
     if fig is not None:
         st.plotly_chart(fig, width="stretch")
     else:
         st.line_chart(df["Close"])
         st.caption("Install plotly untuk chart lengkap (candle + wave + DTosc).")
+
+    # ---------- multi-timeframe correlation (Dual Time Frame) ----------
+    st.markdown("### 🔭 Korelasi Timeframe (Weekly · Daily · 4H)")
+    st.caption("Cara Miner: arah dari timeframe BESAR (Weekly+Daily), entry dari "
+               "timeframe KECIL (4H). Klik buat cek (fetch 3 timeframe).")
+    if st.button("Cek korelasi multi-timeframe", width="stretch"):
+        with st.spinner("Ambil Weekly, Daily, 4H …"):
+            try:
+                rows, _ = multi_tf_view(ticker, market, ma)
+                st.session_state["_mtf"] = rows
+            except Exception as e:  # noqa: BLE001
+                st.session_state["_mtf"] = None
+                st.warning(f"Gagal ambil multi-TF: {e}")
+    rows = st.session_state.get("_mtf")
+    if rows:
+        head, entry = dtf_guidance(rows)
+        cols = st.columns(3)
+        for col, rr in zip(cols, rows):
+            dirc = {"BULL": "🟢", "BEAR": "🔴"}.get(rr.get("dir"), "⚪")
+            col.metric(f"{rr['tf']} (set {rr['set']})",
+                       f"{dirc} {rr.get('dir')}",
+                       help=f"zona {rr.get('zone')}" +
+                            (f" · {rr.get('cross')}" if rr.get("cross") else ""))
+        if "BESAR: NAIK" in head:
+            st.success(f"**{head}**")
+        elif "BESAR: TURUN" in head:
+            st.error(f"**{head}**")
+        else:
+            st.warning(f"**{head}**")
+        st.markdown(f"**Entry:** {entry}")
 
     # ---------- technical detail (power users) ----------
     with st.expander("🔧 Detail teknikal (buat yang mau angka mentahnya)"):
@@ -1540,11 +1669,11 @@ def run_app():
             "set 1=(8,5,3,3)  set 2=(13,8,5,5)  set 3=(21,13,8,8)  set 4=(34,21,13,13)\n"
             "Overbought=75  Oversold=25 | reversal = K cross D",
             language="text")
-        st.caption("Strukturnya (StochRSI double-smooth, parameter Fibonacci, OB75/OS25) "
-                   "sesuai sumber komunitas + buku Miner. Yang BELUM 100% pasti: tipe MA "
-                   "(SMA vs EMA) — Miner nggak buka source. Pakai toggle DTosc MA + samain "
-                   "visual ke chart asli Miner buat lock-nya. Jujur: ini ~90-95% exact, "
-                   "bukan klaim 100%.")
+        st.caption("Strukturnya (StochRSI double-smooth, parameter Fibonacci, OB75/OS25, "
+                   "RSI pakai CLOSE) sesuai ThinkScript/ProRealCode + buku Miner. Default "
+                   "MA = **EMA** (versi ThinkScript yang ada match ke chart Miner asli). "
+                   "Toggle ke SMA kalau perlu. Set auto dari interval (Miner mapping). "
+                   "Jujur: ~90-95% exact, bukan klaim 100% — Miner nggak buka source.")
 
     st.caption("⚠️ Hitungan wave & pivot ini OTOMATIS (starting point) — edge Miner "
                "itu diskresioner. Buat angka persis dia, pakai Manual EOW di sidebar. "
