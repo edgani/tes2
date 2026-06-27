@@ -213,8 +213,11 @@ def dtosc(close: pd.Series, a: int, b: int, c: int, d: int,
 
 
 def dtosc_status(K: pd.Series, D: pd.Series) -> dict:
-    k, dd = float(K.iloc[-1]), float(D.iloc[-1])
-    kp, dp = float(K.iloc[-2]), float(D.iloc[-2])
+    both = pd.concat([K, D], axis=1).dropna()
+    if len(both) < 2:
+        return {"K": None, "D": None, "dir": "n/a", "zone": "n/a", "cross": None}
+    k, dd = float(both.iloc[-1, 0]), float(both.iloc[-1, 1])
+    kp, dp = float(both.iloc[-2, 0]), float(both.iloc[-2, 1])
     direction = "BULL" if k > dd else "BEAR"
     zone = "OB" if (k >= DTOSC_OB and dd >= DTOSC_OB) else \
            "OS" if (k <= DTOSC_OS and dd <= DTOSC_OS) else "MID"
@@ -347,16 +350,20 @@ def _nf(r: float, fibs) -> float:
 
 def atr_pct(df: pd.DataFrame, n: int = 14) -> float:
     if not {"High", "Low", "Close"}.issubset(df.columns):
-        return float((df["Close"].pct_change().abs().rolling(n).mean()).iloc[-1] or 0.02)
+        s = df["Close"].pct_change().abs().rolling(n).mean().dropna()
+        return float(s.iloc[-1]) if len(s) else 0.02
     h, l, c = df["High"], df["Low"], df["Close"]
     pc = c.shift(1)
     tr = pd.concat([(h - l).abs(), (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
     atr = tr.rolling(n).mean()
-    return float((atr / c).dropna().iloc[-1])
+    s = (atr / c).replace([np.inf, -np.inf], np.nan).dropna()
+    return float(s.iloc[-1]) if len(s) else 0.02
 
 
 def auto_swing_pct(df: pd.DataFrame, series: pd.Series) -> float:
     """Adaptive zigzag threshold: ~3x ATR%, then refine to a sane pivot count."""
+    if len(series) < 5:
+        return 3.0
     base = max(1.0, min(8.0, atr_pct(df) * 100.0 * 3.0))
     pct = base
     for _ in range(6):
@@ -465,13 +472,11 @@ def score_triangle(q: list[Pivot]):
         return None
     width = max(legs)
     e = s[-1]
-    # thrust continues the trend INTO the triangle (direction from pre-triangle leg)
-    pre_up = s[1].price > s[0].price  # first leg direction proxy
-    # after a contracting triangle the thrust is usually opposite the last leg
     last_up = s[-1].price > s[-2].price
     thrust_up = not last_up
     target_mid = e.price + (width if thrust_up else -width)
-    score = 2.6 + 0.15 * shrink + 0.15 * overlaps - 0
+    # clean contracting triangle should beat a forced ABC fit
+    score = 3.2 + 0.2 * shrink + 0.2 * overlaps
     wc = WaveCount(
         "TRIANGLE", "up" if thrust_up else "down",
         "Wave-E of triangle (W4/B) — thrust pending", "thrust",
@@ -743,6 +748,7 @@ class Result:
     proj_kind: str = ""
     wave_dir: str = ""
     wave_labels: list = field(default_factory=list)
+    proj_levels: list = field(default_factory=list)
     dtosc_k: Optional[pd.Series] = None
     dtosc_d: Optional[pd.Series] = None
     price_zones: list[dict] = field(default_factory=list)
@@ -767,6 +773,10 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     # --- series (close-based by default = Miner) ---
     series = df["Close"].copy()
     series.index = pd.DatetimeIndex(series.index)
+    if len(series) < 20:
+        raise ValueError(
+            f"Data cuma {len(series)} bar — kependekan buat analisis (butuh ≥20). "
+            f"Coba ticker lain, ganti Market, atau interval yang lebih besar.")
 
     # --- DTosc current TF + DLB (second param set) ---
     a, b, c, d = DTOSC_SETS[dtosc_set]
@@ -815,6 +825,12 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
             eow_kind = "TRIANGLE thrust (post-E)"
     if comp:
         price_zones = cluster_zones(comp, ref, tol_pct=0.6, top=4)
+    # flat projection levels (for labeled horizontal target lines)
+    proj_levels = []
+    for grp, d in comp.items():
+        for lbl, v in d.items():
+            if v is not None and np.isfinite(v):
+                proj_levels.append({"price": float(v), "label": f"{grp} {lbl}"})
 
     # --- time band + ATP/TimeRet from the labeled swings ---
     tband = time_band(highs, lows)
@@ -861,7 +877,7 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
         alternate=alt_str,
         proj_kind=(primary.proj_kind if primary else ""),
         wave_dir=(primary.direction if primary else ""),
-        wave_labels=wave_labels, dtosc_k=K, dtosc_d=D,
+        wave_labels=wave_labels, dtosc_k=K, dtosc_d=D, proj_levels=proj_levels,
         price_zones=price_zones, time_band_dates=tband_dates,
         time_cluster_dates=tcluster_dates, decision=dec, eow_kind=eow_kind,
     )
@@ -1054,152 +1070,258 @@ def _conf_color(c: str) -> str:
     return {"HIGH": "green", "MED": "orange", "LOW": "red"}.get(c, "gray")
 
 
+def _target_zone(r):
+    """Best target zone with fallback: convergence > first zone > None."""
+    conv = [z for z in r.price_zones if z["groups"] >= 2]
+    if conv:
+        return conv[0]
+    return r.price_zones[0] if r.price_zones else None
+
+
+def _eta(r):
+    """Estimated reversal window with fallback: Time Band > cluster date > None."""
+    if r.time_band_dates:
+        return r.time_band_dates
+    if r.time_cluster_dates:
+        d = r.time_cluster_dates[0][0]
+        return (d, d)
+    return None
+
+
 def trade_plan(r) -> dict:
-    """Plain-language, actionable trade plan (Indonesian) from the auto count."""
-    zones = r.price_zones
-    conv = [z for z in zones if z["groups"] >= 2]
-    target = conv[0] if conv else (zones[0] if zones else None)
-    tb = r.time_band_dates
+    """Plain-language, actionable trade plan (Indonesian) — always shows concrete
+    price + date numbers."""
+    z = _target_zone(r)
+    eta = _eta(r)
     trig = r.decision.get("trigger")
     void = r.decision.get("void")
     htf = r.htf_status.get("dir", "n/a")
     pk, wd = r.proj_kind, r.wave_dir
 
-    expecting_top = (pk == "eow5" and wd == "up") or (pk == "eowc" and wd == "up") \
-        or (pk == "thrust" and wd == "down")
-    expecting_bottom = (pk == "eow5" and wd == "down") or (pk == "eowc" and wd == "down") \
-        or (pk == "thrust" and wd == "up")
+    # explicit numbers
+    if z:
+        mid = z["mid"]
+        zone_txt = (f"~{mid:.6g}" if abs(z["high"] - z["low"]) < 1e-9
+                    else f"~{mid:.6g}  (kisaran {z['low']:.6g} – {z['high']:.6g})")
+        target_num = f"{mid:.6g}"
+    else:
+        zone_txt, target_num = "belum bisa dihitung", "—"
+    eta_txt = f"{fmt_date(eta[0])} – {fmt_date(eta[1])}" if eta else "belum bisa dihitung"
+
+    expecting_top = (pk == "eow5" and wd == "up") or (pk == "eowc" and wd == "up")
+    expecting_bottom = (pk == "eow5" and wd == "down") or (pk == "eowc" and wd == "down")
+    is_thrust = pk == "thrust"
 
     wave_human = {
         ("eow5", "up"): "gelombang NAIK ke-5 (terakhir) — fase sebelum PUNCAK, lalu balik turun",
         ("eow5", "down"): "gelombang TURUN ke-5 (terakhir) — fase sebelum DASAR, lalu balik naik",
         ("eowc", "down"): "koreksi TURUN (Wave-C) — fase sebelum DASAR, lalu lanjut NAIK lagi",
         ("eowc", "up"): "koreksi NAIK (Wave-C) — fase sebelum PUNCAK, lalu lanjut TURUN lagi",
-        ("thrust", "up"): "dorongan NAIK keluar dari pola triangle",
-        ("thrust", "down"): "dorongan TURUN keluar dari pola triangle",
+        ("thrust", "up"): "pola SEGITIGA (A-B-C-D-E) hampir selesai — habis ini dorongan NAIK",
+        ("thrust", "down"): "pola SEGITIGA (A-B-C-D-E) hampir selesai — habis ini dorongan TURUN",
     }.get((pk, wd), "struktur belum jelas — tunggu setup lebih rapi")
 
-    zone_txt = "—"
-    if target:
-        zone_txt = (f"{target['low']:.6g}" if abs(target["high"] - target["low"]) < 1e-9
-                    else f"{target['low']:.6g} – {target['high']:.6g}")
-    when = f"{fmt_date(tb[0])} s/d {fmt_date(tb[1])}" if tb else "belum bisa dihitung"
+    p = {"now": wave_human, "target_price_txt": zone_txt, "target_num": target_num,
+         "eta_txt": eta_txt, "confidence": r.confidence, "trend_htf": htf,
+         "expecting_top": expecting_top, "expecting_bottom": expecting_bottom,
+         "is_thrust": is_thrust, "last": r.last_close}
+    p["topbottom"] = ("PUNCAK (TOP)" if expecting_top else
+                      "DASAR (BOTTOM)" if expecting_bottom else
+                      ("DORONGAN NAIK" if (is_thrust and wd == "up") else
+                       "DORONGAN TURUN" if is_thrust else "belum jelas"))
 
-    p = {"now": wave_human,
-         "topbottom": "PUNCAK (TOP)" if expecting_top else
-                      ("DASAR (BOTTOM)" if expecting_bottom else "belum jelas"),
-         "when": when, "target_zone": zone_txt, "confidence": r.confidence,
-         "trend_htf": htf, "expecting_top": expecting_top,
-         "expecting_bottom": expecting_bottom, "last": r.last_close}
-
-    if expecting_bottom:
+    if is_thrust:
+        up = wd == "up"
+        p["headline"] = (f"BREAKOUT SEGITIGA — siap dorongan {'NAIK' if up else 'TURUN'}")
+        p["side"] = "LONG / BELI" if up else "SHORT / JUAL"
+        p["entry_rule"] = trig[0] if trig else "tunggu harga keluar dari segitiga"
+        p["entry_explain"] = (
+            f"Harga lagi mampet di pola segitiga (A-B-C-D-E). Setelah selesai, biasanya "
+            f"ada dorongan tajam {'NAIK' if up else 'TURUN'}. Masuk pas konfirmasi breakout: "
+            f"{p['entry_rule']}. Perkiraan target dorongan: {zone_txt}.")
+        p["stop_rule"] = (f"kalau balik masuk ke dalam segitiga (CLOSE {'<' if up else '>'} "
+                          f"sisi segitiga)")
+        p["profit"] = f"Target dorongan ~{target_num}. Pakai trailing stop."
+    elif expecting_bottom:
         p["headline"] = "SIAP-SIAP BELI (LONG) — tunggu konfirmasi dasar dulu"
         p["side"] = "LONG / BELI"
         p["entry_rule"] = trig[0] if trig else "tunggu sinyal reversal naik"
         p["entry_explain"] = (
-            f"Harga lagi turun nyari DASAR di zona {zone_txt}. Jangan beli sekarang "
-            f"(itu nangkep pisau jatuh). Tunggu konfirmasi: {p['entry_rule']}. "
-            f"Sebelum konfirmasi itu, harga masih bisa lanjut turun ke {zone_txt} dulu.")
-        if void:
-            p["stop_rule"] = void[0]
-        elif target:
-            p["stop_rule"] = f"kalau CLOSE jebol di bawah {target['low']:.6g} (bawah zona dasar)"
-        else:
-            p["stop_rule"] = "kalau jebol di bawah dasar terbaru"
-        p["profit"] = ("Setelah masuk, target naik bertahap. Pakai trailing stop — "
-                       "jangan exit di satu harga target tetap (Miner: biarin market yang exit).")
+            f"Harga lagi turun nyari DASAR di sekitar {zone_txt}. Jangan beli sekarang "
+            f"(itu nangkep pisau jatuh). Tunggu konfirmasi: {p['entry_rule']}. Sebelum "
+            f"konfirmasi itu, harga masih bisa lanjut turun ke area {target_num} dulu.")
+        p["stop_rule"] = (void[0] if void else
+                          (f"kalau CLOSE jebol di bawah {z['low']:.6g}" if z else "—"))
+        p["profit"] = ("Setelah masuk, target naik bertahap. Pakai trailing stop — jangan "
+                       "exit di satu harga tetap (Miner: biarin market yang exit).")
     elif expecting_top:
         p["headline"] = "SIAP-SIAP JUAL / AMBIL PROFIT — tunggu konfirmasi puncak"
         p["side"] = "SHORT / JUAL (atau exit LONG)"
         p["entry_rule"] = trig[0] if trig else "tunggu sinyal reversal turun"
         p["entry_explain"] = (
-            f"Harga lagi naik nyari PUNCAK di zona {zone_txt}. Kalau lagi pegang posisi "
-            f"beli, siap-siap ambil profit di zona itu. Buat SHORT: tunggu konfirmasi "
-            f"{p['entry_rule']}. Sebelum itu harga masih bisa lanjut naik ke {zone_txt} dulu.")
-        if void:
-            p["stop_rule"] = void[0]
-        elif target:
-            p["stop_rule"] = f"kalau CLOSE tembus di atas {target['high']:.6g} (atas zona puncak)"
-        else:
-            p["stop_rule"] = "kalau tembus di atas puncak terbaru"
-        p["profit"] = ("Setelah masuk short, target turun bertahap. Pakai trailing stop.")
+            f"Harga lagi naik nyari PUNCAK di sekitar {zone_txt}. Kalau lagi pegang posisi "
+            f"beli, siap-siap ambil profit di area itu. Buat SHORT: tunggu konfirmasi "
+            f"{p['entry_rule']}. Sebelum itu harga masih bisa lanjut naik ke {target_num} dulu.")
+        p["stop_rule"] = (void[0] if void else
+                          (f"kalau CLOSE tembus di atas {z['high']:.6g}" if z else "—"))
+        p["profit"] = "Setelah masuk short, target turun bertahap. Pakai trailing stop."
     else:
         p["headline"] = "BELUM ADA SETUP JELAS — tunggu"
         p["side"] = "WAIT / NUNGGU"
         p["entry_rule"] = "—"
-        p["entry_explain"] = ("Struktur belum rapi atau confidence rendah. "
-                              "Tunggu pola lebih jelas sebelum entry.")
+        p["entry_explain"] = ("Struktur belum rapi / confidence rendah. Tunggu pola lebih "
+                              "jelas dulu sebelum entry.")
         p["stop_rule"] = "—"
         p["profit"] = "—"
 
-    aligned = (expecting_bottom and htf == "BULL") or (expecting_top and htf == "BEAR")
+    bull_bias = expecting_bottom or (is_thrust and wd == "up")
+    bear_bias = expecting_top or (is_thrust and wd == "down")
+    aligned = (bull_bias and htf == "BULL") or (bear_bias and htf == "BEAR")
     if htf in ("BULL", "BEAR"):
-        p["align_note"] = ("✅ Searah trend besar (timeframe atas " + htf +
-                           ") — setup lebih kuat.") if aligned else \
-            ("⚠️ LAWAN trend besar (timeframe atas " + htf +
-             ") — lebih berisiko. Kecilin ukuran posisi / tunggu konfirmasi ekstra.")
+        p["align_note"] = ("✅ Searah trend besar (timeframe atas " + htf + ") — setup lebih kuat."
+                           if aligned else
+                           "⚠️ LAWAN trend besar (timeframe atas " + htf +
+                           ") — lebih berisiko. Kecilin ukuran posisi / tunggu konfirmasi ekstra.")
     else:
         p["align_note"] = "Trend timeframe atas belum cukup data."
     return p
 
 
+_CIRCLED = {"0": "⓪", "1": "①", "2": "②", "3": "③", "4": "④", "5": "⑤",
+            "5?": "⑤", "A": "Ⓐ", "B": "Ⓑ", "C": "Ⓒ", "C?": "Ⓒ",
+            "D": "Ⓓ", "E": "Ⓔ", "x": "·", "→": "▲"}
+
+
 def _plot(df, r):
-    """2-panel Plotly: price (candles + waves + zones + time band) + DTosc panel."""
+    """Miner-style 2-panel chart: candles + MAs + circled waves + labeled target
+    lines (price on right) + projection arrow with % + DTosc panel."""
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
     except Exception:  # noqa: BLE001
         return None
+
+    close = df["Close"]
+    last_x, last_y = df.index[-1], float(close.iloc[-1])
+    gaps = pd.Series(df.index).diff().dropna()
+    gap = gaps.median() if len(gaps) else pd.Timedelta(days=1)
+    future_x = last_x + gap * 8                       # empty space on the right
+
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.72, 0.28], vertical_spacing=0.05,
+                        row_heights=[0.74, 0.26], vertical_spacing=0.04,
                         subplot_titles=("Harga + Wave + Target", "DTosc (momentum)"))
+
+    # --- candles ---
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
-        close=df["Close"], name="harga", increasing_line_color="#26a69a",
-        decreasing_line_color="#ef5350"), row=1, col=1)
+        close=close, name="harga", increasing_line_color="#26a69a",
+        decreasing_line_color="#ef5350", showlegend=False), row=1, col=1)
+
+    # --- moving averages (trend context) ---
+    for win, col in ((20, "#fdd835"), (50, "#42a5f5"), (100, "#66bb6a"),
+                     (200, "#ff9800")):
+        if len(close) >= win:
+            fig.add_trace(go.Scatter(
+                x=df.index, y=close.ewm(span=win, adjust=False).mean(),
+                line=dict(color=col, width=1), name=f"EMA{win}",
+                opacity=0.7), row=1, col=1)
+
+    # --- swing skeleton line + circled wave labels ---
     if r.pivots:
         fig.add_trace(go.Scatter(
             x=[p.date for p in r.pivots], y=[p.price for p in r.pivots],
-            mode="lines", line=dict(color="#ffb74d", width=1.2),
-            name="swing"), row=1, col=1)
-    for w in r.wave_labels:                     # 1-2-3-4-5 / A-B-C labels
-        fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{w['label']}</b>",
-                           showarrow=False, font=dict(color="#ffd54f", size=15),
-                           yshift=15, row=1, col=1)
-    for z in r.price_zones[:3]:
-        conv = z["groups"] >= 2
-        col = "rgba(38,166,154,0.20)" if conv else "rgba(150,150,150,0.10)"
-        lo, hi = z["low"], max(z["high"], z["low"] * 1.0003)
-        fig.add_hrect(y0=lo, y1=hi, line_width=0, fillcolor=col, row=1, col=1)
-        fig.add_hline(y=z["mid"], line_dash="dot",
-                      line_color="#26a69a" if conv else "#9e9e9e",
-                      annotation_text=("🎯 TARGET" if conv else "target"),
-                      annotation_position="right", row=1, col=1)
+            mode="lines", line=dict(color="#bdbdbd", width=1, dash="dot"),
+            name="swing", showlegend=False), row=1, col=1)
+    for i, w in enumerate(r.wave_labels):
+        is_current = (i == len(r.wave_labels) - 1)
+        lab = _CIRCLED.get(w["label"], w["label"])
+        col = "#69f0ae" if is_current else "#ff8a80"     # green current / red done
+        up = w["label"] in ("1", "3", "5", "5?", "B", "D")
+        fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{lab}</b>",
+                           showarrow=False, font=dict(color=col, size=18),
+                           yshift=16 if up else -16, xref="x", yref="y")
+
+    # --- higher-degree context labels (start & current of the move) ---
+    if r.pivots and len(r.pivots) >= 2:
+        fig.add_annotation(x=r.pivots[0].date, y=r.pivots[0].price,
+                           text="<b>(start)</b>", showarrow=False,
+                           font=dict(color="#9e9e9e", size=11), yshift=-22,
+                           xref="x", yref="y")
+
+    # --- labeled target lines (price on the right edge) ---
+    drawn = []
+    levels = sorted(r.proj_levels, key=lambda x: x["price"])
+    for lv in levels:
+        price = lv["price"]
+        if any(abs(price - d) / max(abs(price), 1e-9) < 0.003 for d in drawn):
+            continue                                   # dedupe near-equal
+        if not (last_y * 0.55 < price < last_y * 1.7):  # keep near current range
+            continue
+        drawn.append(price)
+        above = price >= last_y
+        lc = "#26a69a" if above else "#ff9800"
+        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=price, y1=price,
+                      line=dict(color=lc, width=1, dash="dot"), opacity=0.55,
+                      xref="x", yref="y", layer="below")
+        fig.add_annotation(x=future_x, y=price, text=f"({price:.4g})",
+                           showarrow=False, xanchor="left", xshift=4,
+                           font=dict(color=lc, size=11), xref="x", yref="y")
+
+    # --- convergence zone(s): brighter band + 🎯 ---
+    for z in [zz for zz in r.price_zones if zz["groups"] >= 2][:2]:
+        lo, hi = z["low"], max(z["high"], z["low"] * 1.0004)
+        fig.add_shape(type="rect", x0=df.index[0], x1=future_x, y0=lo, y1=hi,
+                      fillcolor="rgba(38,166,154,0.18)", line_width=0,
+                      xref="x", yref="y", layer="below")
+        fig.add_annotation(x=future_x, y=z["mid"], text="🎯 TARGET",
+                           showarrow=False, xanchor="left", xshift=4,
+                           font=dict(color="#26a69a", size=12, family="Arial Black"),
+                           xref="x", yref="y")
+
+    # --- projection arrow + % move ---
+    conv = [z for z in r.price_zones if z["groups"] >= 2]
+    tgt = conv[0]["mid"] if conv else (r.price_zones[0]["mid"] if r.price_zones else None)
+    if tgt is not None and last_y:
+        pct = (tgt - last_y) / last_y * 100.0
+        ac = "#42a5f5" if tgt >= last_y else "#ff5252"
+        fig.add_annotation(x=future_x, y=tgt, ax=future_x, ay=last_y,
+                           xref="x", yref="y", axref="x", ayref="y",
+                           showarrow=True, arrowhead=2, arrowsize=1.3,
+                           arrowwidth=3, arrowcolor=ac)
+        fig.add_annotation(x=future_x, y=(tgt + last_y) / 2.0,
+                           text=f"<b>{pct:+.1f}%</b>", showarrow=False, xshift=22,
+                           font=dict(color=ac, size=16),
+                           bgcolor="rgba(0,0,0,0.6)", xref="x", yref="y")
+
+    # --- time band shading ---
     if r.time_band_dates:
         fig.add_vrect(x0=r.time_band_dates[0], x1=r.time_band_dates[1],
-                      fillcolor="rgba(66,135,245,0.14)", line_width=0,
-                      annotation_text="Time Band (perkiraan waktu reversal)",
-                      annotation_position="top left", row=1, col=1)
+                      fillcolor="rgba(66,135,245,0.12)", line_width=0,
+                      annotation_text="Time Band", annotation_position="top left",
+                      row=1, col=1)
+
+    # --- DTosc panel ---
     if r.dtosc_k is not None:
         fig.add_hrect(y0=75, y1=100, fillcolor="rgba(239,83,80,0.12)",
                       line_width=0, row=2, col=1)
         fig.add_hrect(y0=0, y1=25, fillcolor="rgba(38,166,154,0.12)",
                       line_width=0, row=2, col=1)
-        fig.add_hline(y=75, line_dash="dash", line_color="#ef5350",
-                      line_width=1, row=2, col=1)
-        fig.add_hline(y=25, line_dash="dash", line_color="#26a69a",
-                      line_width=1, row=2, col=1)
+        for yv, cc in ((75, "#ef5350"), (25, "#26a69a")):
+            fig.add_hline(y=yv, line_dash="dash", line_color=cc, line_width=1,
+                          row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_k.index, y=r.dtosc_k.values,
                                  line=dict(color="#42a5f5", width=1.6),
-                                 name="DTosc K (cepat)"), row=2, col=1)
+                                 name="DTosc K"), row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_d.index, y=r.dtosc_d.values,
                                  line=dict(color="#ff7043", width=1.6),
-                                 name="DTosc D (lambat)"), row=2, col=1)
+                                 name="DTosc D"), row=2, col=1)
         fig.update_yaxes(range=[0, 100], row=2, col=1)
-    fig.update_layout(height=660, template="plotly_dark",
+
+    fig.update_xaxes(range=[df.index[0], future_x + gap * 3])
+    fig.update_layout(height=680, template="plotly_dark",
                       xaxis_rangeslider_visible=False,
                       margin=dict(l=0, r=0, t=28, b=0),
-                      legend=dict(orientation="h", y=1.04),
+                      legend=dict(orientation="h", y=1.05),
                       hovermode="x unified")
     return fig
 
@@ -1223,7 +1345,10 @@ def run_app():
                               ["auto", "us", "idx", "forex", "commodity", "crypto"],
                               help="IDX stocks (HUMI, BBCA): pick 'idx' → adds .JK")
         interval = st.selectbox("Interval",
-                                ["1d", "1wk", "1h", "60m", "30m", "15m", "5m"], index=0)
+                                ["1d", "1wk", "1h", "60m", "30m", "15m", "5m"], index=0,
+                                help="Timeframe analisis. Miner sering pakai Daily & "
+                                     "Weekly (1wk) untuk swing/posisi. Pilih 1wk untuk "
+                                     "timeframe besar.")
         c1, c2 = st.columns(2)
         dtosc_set = c1.selectbox("DTosc set", [1, 2, 3, 4], index=1)
         ma = c2.selectbox("DTosc MA", ["sma", "ema"], index=0,
@@ -1287,6 +1412,9 @@ def run_app():
     except SystemExit as e:
         st.error(f"⚠️ {e}")
         return
+    except ValueError as e:
+        st.warning(f"⚠️ {e}")
+        return
     except Exception as e:  # noqa: BLE001
         st.error(f"⚠️ Error: {e}")
         st.exception(e)
@@ -1305,19 +1433,22 @@ def run_app():
     st.markdown(f"## 📋 Rencana Trading &nbsp;—&nbsp; "
                 f":{cc}[keyakinan {p['confidence']}]")
 
-    # one-line situation
     st.markdown(f"**Posisi sekarang:** {r.wave_pattern} — lagi di {p['now']}.")
 
+    # the three things that matter, with REAL numbers
     a, b, c = st.columns(3)
     a.metric("Lagi nyari apa?", p["topbottom"])
-    b.metric("Perkiraan kapan", p["when"].split(" s/d ")[0] if "s/d" in p["when"] else p["when"],
-             help=f"Perkiraan jendela waktu reversal: {p['when']}")
-    c.metric("Zona target harga", p["target_zone"])
+    b.metric(f"Perkiraan harga {p['topbottom'].split()[0].lower()}",
+             f"≈ {p['target_num']}",
+             help=f"Zona target: {p['target_price_txt']}")
+    c.metric("Perkiraan tanggal", p["eta_txt"], help="Jendela waktu reversal (Time Band)")
+    st.markdown(f"💰 **Perkiraan harga {p['topbottom']}:** {p['target_price_txt']}  "
+                f"&nbsp;|&nbsp; 📅 **Perkiraan waktu:** {p['eta_txt']}")
 
     # the actionable box
-    if p["expecting_bottom"]:
+    if p["expecting_bottom"] or (p["is_thrust"] and r.wave_dir == "up"):
         st.success(f"### 🟢 {p['headline']}")
-    elif p["expecting_top"]:
+    elif p["expecting_top"] or (p["is_thrust"] and r.wave_dir == "down"):
         st.error(f"### 🔴 {p['headline']}")
     else:
         st.warning(f"### ⚪ {p['headline']}")
@@ -1325,13 +1456,13 @@ def run_app():
     g1, g2 = st.columns([3, 2])
     with g1:
         st.markdown(f"**Apa yang terjadi:** {p['entry_explain']}")
-        st.markdown(f"**Kapan boleh masuk (ENTRY):**")
+        st.markdown("**Kapan boleh masuk (ENTRY):**")
         st.markdown(f"> ✅ {p['entry_rule']}")
-        st.markdown(f"**Stop / batal kalau:**")
+        st.markdown("**Stop / batal kalau:**")
         st.markdown(f"> 🛑 {p['stop_rule']}")
     with g2:
         st.markdown(f"**Arah trade:** {p['side']}")
-        st.markdown(f"**Zona beli/jual:** {p['target_zone']}")
+        st.markdown(f"**Target harga:** {p['target_price_txt']}")
         st.markdown(f"**Setelah masuk:** {p['profit']}")
         st.info(p["align_note"])
 
@@ -1341,10 +1472,12 @@ def run_app():
 
     # ---------- chart (price + waves + zones + DTosc) ----------
     st.markdown("### 📈 Chart")
-    st.caption("Atas: harga + label wave (angka/huruf di pivot) + zona target (garis) "
-               "+ Time Band (area biru = perkiraan waktu reversal). "
-               "Bawah: **DTosc** — momentum. Garis masuk area merah (atas 75) = "
-               "jenuh beli; area hijau (bawah 25) = jenuh jual.")
+    st.caption("**Atas:** candle + EMA (garis tren) + label wave bulet ①②③④⑤ / ⒶⒷⒸ "
+               "(merah = wave selesai, hijau = wave berjalan) + garis target berlabel "
+               "harga di kanan + 🎯 zona konvergensi + panah % = perkiraan arah & besar "
+               "gerak + Time Band (area biru = perkiraan waktu reversal). "
+               "**Bawah: DTosc** — garis di area merah (>75) = jenuh beli, "
+               "area hijau (<25) = jenuh jual.")
     fig = _plot(df, r)
     if fig is not None:
         st.plotly_chart(fig, width="stretch")
@@ -1399,6 +1532,19 @@ def run_app():
         if r.decision.get("void"):
             v, dt = r.decision["void"]
             st.warning(f"Void — {v} · ref {fmt_date(dt)}")
+
+        a, b2, c2, d = DTOSC_SETS[2] if r.dtosc_status else (13, 8, 5, 5)
+        st.markdown("**Formula DTosc** (reverse-engineered):")
+        st.code(
+            "RSI(close, a)  ->  Stoch over b  ->  K = MA(stoch, c)  ->  D = MA(K, d)\n"
+            "set 1=(8,5,3,3)  set 2=(13,8,5,5)  set 3=(21,13,8,8)  set 4=(34,21,13,13)\n"
+            "Overbought=75  Oversold=25 | reversal = K cross D",
+            language="text")
+        st.caption("Strukturnya (StochRSI double-smooth, parameter Fibonacci, OB75/OS25) "
+                   "sesuai sumber komunitas + buku Miner. Yang BELUM 100% pasti: tipe MA "
+                   "(SMA vs EMA) — Miner nggak buka source. Pakai toggle DTosc MA + samain "
+                   "visual ke chart asli Miner buat lock-nya. Jujur: ini ~90-95% exact, "
+                   "bukan klaim 100%.")
 
     st.caption("⚠️ Hitungan wave & pivot ini OTOMATIS (starting point) — edge Miner "
                "itu diskresioner. Buat angka persis dia, pakai Manual EOW di sidebar. "
