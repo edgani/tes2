@@ -295,40 +295,216 @@ def zigzag_pivots(series: pd.Series, pct: float = 3.0) -> list[Pivot]:
 
 
 def classify_structure(piv: list[Pivot]) -> dict:
-    """
-    Overlap guideline -> trend vs correction, plus a heuristic current-wave
-    label. AUTO ONLY — flagged as discretionary. Uses last up to 6 pivots.
-    """
+    """Legacy crude overlap classifier (kept as fallback)."""
     if len(piv) < 3:
-        return {"pattern": "n/a", "wave": "n/a", "overlap": None,
-                "bias": "n/a", "note": "not enough pivots"}
+        return {"pattern": "n/a", "overlap": None}
     last = piv[-6:]
-    # overlap test on the most recent 3 same-direction sections
     overlap = False
     for i in range(2, len(last)):
-        a, b = last[i - 2], last[i]
-        if a.kind == b.kind:  # two highs or two lows = a 'section' comparison
-            prev = last[i - 1]
-            if a.kind == "H":  # downward sections (H->L), overlap if new H back into prior range
-                if b.price <= a.price and prev.price < a.price:
-                    pass
-            # generic overlap: latest extreme retraces into the section two-back
-            lo = min(a.price, prev.price)
-            hi = max(a.price, prev.price)
-            if lo <= b.price <= hi:
-                overlap = True
-    pattern = "CORRECTION (overlap)" if overlap else "TREND (impulsive, no overlap)"
-    # crude wave guess from count of legs since a major pivot
-    legs = len(piv)
-    cur = piv[-1]
-    if overlap:
-        wave = "Wave-B / C of a correction (verify)"
-    else:
-        wave = "late-wave of an impulse — possible W3/W5 (verify)"
-    bias = "expecting DOWN reversal" if cur.kind == "H" else "expecting UP reversal"
-    return {"pattern": pattern, "wave": wave, "overlap": overlap,
-            "bias": bias, "legs": legs,
-            "note": "AUTO read — override pivots/pattern for Miner-grade accuracy"}
+        a, prev, b = last[i - 2], last[i - 1], last[i]
+        lo, hi = min(a.price, prev.price), max(a.price, prev.price)
+        if lo <= b.price <= hi:
+            overlap = True
+    return {"pattern": "CORRECTION" if overlap else "TREND", "overlap": overlap}
+
+
+# ============================================================================
+#  AUTO STRUCTURE ENGINE  (auto wave labeling — best effort, scored)
+# ============================================================================
+FIB_RET2 = (0.382, 0.50, 0.618, 0.786)
+FIB_W3 = (1.0, 1.272, 1.618, 2.618)
+FIB_W4 = (0.236, 0.382, 0.50)
+
+
+@dataclass
+class WaveCount:
+    pattern: str                 # IMPULSE / ABC / TRIANGLE / UNKNOWN
+    direction: str               # 'up' / 'down' (of the operative move)
+    current_wave: str
+    proj_kind: str               # 'eow5' / 'eowc' / 'thrust' / ''
+    proj_pivots: list = field(default_factory=list)   # list[Pivot]
+    score: float = 0.0
+    guidelines_ok: bool = False
+    expect: str = ""             # what we expect next
+    detail: str = ""
+    margin: float = 99.0         # score gap over the alternate count
+
+    @property
+    def confidence(self) -> str:
+        if self.margin < 0.4:        # too close to the alternate = ambiguous
+            return "LOW"
+        if self.guidelines_ok and self.score >= 3.3 and self.margin >= 0.8:
+            return "HIGH"
+        if self.score >= 2.0:
+            return "MED"
+        return "LOW"
+
+
+def _nf(r: float, fibs) -> float:
+    return min(abs(r - f) for f in fibs)
+
+
+def atr_pct(df: pd.DataFrame, n: int = 14) -> float:
+    if not {"High", "Low", "Close"}.issubset(df.columns):
+        return float((df["Close"].pct_change().abs().rolling(n).mean()).iloc[-1] or 0.02)
+    h, l, c = df["High"], df["Low"], df["Close"]
+    pc = c.shift(1)
+    tr = pd.concat([(h - l).abs(), (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+    atr = tr.rolling(n).mean()
+    return float((atr / c).dropna().iloc[-1])
+
+
+def auto_swing_pct(df: pd.DataFrame, series: pd.Series) -> float:
+    """Adaptive zigzag threshold: ~3x ATR%, then refine to a sane pivot count."""
+    base = max(1.0, min(8.0, atr_pct(df) * 100.0 * 3.0))
+    pct = base
+    for _ in range(6):
+        n = len(zigzag_pivots(series, pct))
+        if n < 7 and pct > 0.6:
+            pct *= 0.8
+        elif n > 22:
+            pct *= 1.25
+        else:
+            break
+    return round(pct, 2)
+
+
+def score_impulse(q: list[Pivot]):
+    """W1-4 complete + W5 in progress. q = 5-pivot skeleton (p0..p4)."""
+    if len(q) < 5:
+        return None
+    s = q[-5:]
+    p0, p1, p2, p3, p4 = (x.price for x in s)
+    kinds = [x.kind for x in s]
+    up = p1 > p0
+    if up and kinds != ["L", "H", "L", "H", "L"]:
+        return None
+    if (not up) and kinds != ["H", "L", "H", "L", "H"]:
+        return None
+    W1, W2, W3, W4 = abs(p1 - p0), abs(p2 - p1), abs(p3 - p2), abs(p4 - p3)
+    if min(W1, W3) <= 0:
+        return None
+    hard = 0.0
+    if up and p2 <= p0:        # W2 beyond start
+        hard += 3
+    if (not up) and p2 >= p0:
+        hard += 3
+    if up and p4 < p1:         # W4 overlaps W1
+        hard += 2 * (p1 - p4) / W1
+    if (not up) and p4 > p1:
+        hard += 2 * (p4 - p1) / W1
+    if W3 < W1:                # W3 shortest tendency
+        hard += 1.5 * (1 - W3 / W1)
+    soft = _nf(W2 / W1, FIB_RET2) + _nf(W3 / W1, FIB_W3) + _nf(W4 / W3, FIB_W4)
+    score = 5.0 - hard - soft
+    wc = WaveCount(
+        "IMPULSE", "up" if up else "down",
+        f"Wave-5 {'up' if up else 'down'} (in progress)", "eow5",
+        [s[0], s[1], s[3], s[4]], score, hard < 0.5,
+        "top/reversal once W5 completes" if up else "bottom/reversal once W5 completes",
+        f"W1={W1:.4g} W2={W2:.4g} W3={W3:.4g} W4={W4:.4g}")
+    return score, wc
+
+
+def score_abc(q: list[Pivot]):
+    """A,B complete + C in progress. q = 4 pivots [prior_start, prior_end, A, B]."""
+    if len(q) < 4:
+        return None
+    s = q[-4:]
+    r0, r1, r2, r3 = (x.price for x in s)
+    kinds = [x.kind for x in s]
+    down_corr = (kinds == ["L", "H", "L", "H"])   # bull trend, correcting down (C down)
+    up_corr = (kinds == ["H", "L", "H", "L"])     # bear trend, correcting up (C up)
+    if not (down_corr or up_corr):
+        return None
+    prior = abs(r1 - r0)
+    A = abs(r2 - r1)
+    B = abs(r3 - r2)
+    if min(prior, A) <= 0:
+        return None
+    hard = 0.0
+    if down_corr and r3 >= r1:    # B above prior high -> not a clean down-correction
+        hard += 2
+    if up_corr and r3 <= r1:
+        hard += 2
+    # B should retrace a meaningful part of A (zigzag) but not exceed it fully
+    if B / A > 1.05:
+        hard += 1.5 * (B / A - 1.0)
+    soft = _nf(B / A, (0.382, 0.5, 0.618, 0.786, 0.886)) + _nf(A / prior, (0.382, 0.5, 0.618, 1.0, 1.618))
+    score = 4.4 - hard - soft
+    direction = "down" if down_corr else "up"
+    wc = WaveCount(
+        "ABC", direction, f"Wave-C {direction} (in progress)", "eowc",
+        [s[0], s[1], s[2], s[3]], score, hard < 0.5,
+        "up-reversal once Wave-C completes" if down_corr
+        else "down-reversal once Wave-C completes",
+        f"prior={prior:.4g} A={A:.4g} B={B:.4g} (B/A={B/A:.2f})")
+    return score, wc
+
+
+def score_triangle(q: list[Pivot]):
+    """Contracting ABCDE (overlapping, shrinking legs) — typically W4/Wave-B."""
+    if len(q) < 6:
+        return None
+    s = q[-6:]
+    legs = [abs(s[i + 1].price - s[i].price) for i in range(5)]
+    if min(legs) <= 0:
+        return None
+    # require general contraction (each leg <= prior * 1.05, mostly shrinking)
+    shrink = sum(1 for i in range(4) if legs[i + 1] <= legs[i] * 1.05)
+    if shrink < 3:
+        return None
+    # overlap of successive swing ranges
+    overlaps = 0
+    for i in range(2, 6):
+        lo, hi = sorted((s[i - 2].price, s[i - 1].price))
+        if lo <= s[i].price <= hi:
+            overlaps += 1
+    if overlaps < 2:
+        return None
+    width = max(legs)
+    e = s[-1]
+    # thrust continues the trend INTO the triangle (direction from pre-triangle leg)
+    pre_up = s[1].price > s[0].price  # first leg direction proxy
+    # after a contracting triangle the thrust is usually opposite the last leg
+    last_up = s[-1].price > s[-2].price
+    thrust_up = not last_up
+    target_mid = e.price + (width if thrust_up else -width)
+    score = 2.6 + 0.15 * shrink + 0.15 * overlaps - 0
+    wc = WaveCount(
+        "TRIANGLE", "up" if thrust_up else "down",
+        "Wave-E of triangle (W4/B) — thrust pending", "thrust",
+        [e], score, shrink >= 4 and overlaps >= 3,
+        f"{'up' if thrust_up else 'down'} thrust ~{target_mid:.4g} after E completes",
+        f"legs={[round(x,3) for x in legs]} width={width:.4g}")
+    wc._thrust = (e.price, width, thrust_up)  # type: ignore
+    return score, wc
+
+
+def label_structure(pivots: list[Pivot]) -> tuple[Optional[WaveCount], Optional[WaveCount]]:
+    """Try all templates on recent pivots, return (primary, alternate)."""
+    if len(pivots) < 4:
+        return None, None
+    cands = []
+    for scorer, need in ((score_impulse, 5), (score_abc, 4), (score_triangle, 6)):
+        if len(pivots) >= need:
+            res = scorer(pivots)
+            if res:
+                cands.append(res)
+        # also try one pivot earlier (in case last pivot is noise)
+        if len(pivots) >= need + 1:
+            res = scorer(pivots[:-1])
+            if res:
+                sc, wc = res
+                cands.append((sc - 0.3, wc))   # slight penalty for older window
+    if not cands:
+        return None, None
+    cands.sort(key=lambda x: x[0], reverse=True)
+    primary = cands[0][1]
+    alternate = cands[1][1] if len(cands) > 1 and cands[1][1].pattern != primary.pattern else None
+    if len(cands) > 1:
+        primary.margin = round(cands[0][0] - cands[1][0], 2)
+    return primary, alternate
 
 
 # ----------------------------------------------------------------------------
@@ -500,34 +676,41 @@ def idx_to_date(series_index: pd.DatetimeIndex, target_idx: int) -> pd.Timestamp
 # ----------------------------------------------------------------------------
 # 7. DECISION LAYER — trigger / void CLOSE levels  (Layer 4)
 # ----------------------------------------------------------------------------
-def decision_levels(piv: list[Pivot], struct: dict, close: pd.Series) -> dict:
-    """
-    Best-effort Miner-style trigger/void close levels derived from swings.
-    Bearish scenario (expecting decline): trigger = close below last swing low;
-    void = close above the recent corrective high. Mirror for bullish.
-    """
-    if len(piv) < 3:
+def decision_levels(wc: Optional[WaveCount], piv: list[Pivot]) -> dict:
+    """Trigger/void CLOSE levels from the auto wave count's own pivots.
+    eowc -> Miner go-signal = close beyond Wave-B; void = beyond prior-trend start.
+    eow5 -> reversal confirmed = close beyond W4 extreme."""
+    if not wc or not wc.proj_pivots:
         return {}
-    last_high = max((p for p in piv if p.kind == "H"), key=lambda p: p.idx, default=None)
-    last_low = min((p for p in piv if p.kind == "L"), key=lambda p: p.idx, default=None)
-    # most recent swing low / high prices
-    lows = [p for p in piv if p.kind == "L"]
-    highs = [p for p in piv if p.kind == "H"]
+    pp = wc.proj_pivots
     res = {}
-    if struct.get("bias", "").startswith("expecting DOWN"):
-        if lows:
-            res["trigger"] = (f"BEAR confirmed on CLOSE < {lows[-1].price:.4g}",
-                              lows[-1].date)
-        if highs:
-            res["void"] = (f"voided on CLOSE > {highs[-1].price:.4g}",
-                           highs[-1].date)
-    else:
-        if highs:
-            res["trigger"] = (f"BULL confirmed on CLOSE > {highs[-1].price:.4g}",
-                              highs[-1].date)
-        if lows:
-            res["void"] = (f"voided on CLOSE < {lows[-1].price:.4g}",
-                           lows[-1].date)
+    if wc.proj_kind == "eowc" and len(pp) >= 4:
+        prior_start, _prior_end, _A, B = pp[0], pp[1], pp[2], pp[3]
+        if wc.direction == "down":          # C down, then resume UP
+            res["trigger"] = (f"correction complete / BULL on CLOSE > "
+                              f"{B.price:.6g} (Wave-B)", B.date)
+            res["void"] = (f"read invalid on CLOSE < {prior_start.price:.6g} "
+                           f"(prior-trend start)", prior_start.date)
+        else:                                # C up, then resume DOWN
+            res["trigger"] = (f"correction complete / BEAR on CLOSE < "
+                              f"{B.price:.6g} (Wave-B)", B.date)
+            res["void"] = (f"read invalid on CLOSE > {prior_start.price:.6g} "
+                           f"(prior-trend start)", prior_start.date)
+    elif wc.proj_kind == "eow5" and len(pp) >= 4:
+        W4 = pp[3]
+        if wc.direction == "up":             # top forming -> reversal DOWN
+            res["trigger"] = (f"Wave-5 top complete / BEAR on CLOSE < "
+                              f"{W4.price:.6g} (W4 low)", W4.date)
+        else:                                # bottom forming -> reversal UP
+            res["trigger"] = (f"Wave-5 bottom complete / BULL on CLOSE > "
+                              f"{W4.price:.6g} (W4 high)", W4.date)
+    elif wc.proj_kind == "thrust" and hasattr(wc, "_thrust"):
+        e, _w, up = wc._thrust
+        d0 = pp[0].date if pp else None
+        if up:
+            res["trigger"] = (f"UP thrust on CLOSE > {e:.6g} (above Wave-E)", d0)
+        else:
+            res["trigger"] = (f"DOWN thrust on CLOSE < {e:.6g} (below Wave-E)", d0)
     return res
 
 
@@ -546,8 +729,14 @@ class Result:
     htf_status: dict
     dtosc_status: dict
     dtosc_dlb: dict
-    structure: dict
     pivots: list[Pivot]
+    swing_pct: float = 0.0
+    wave_pattern: str = "UNKNOWN"
+    current_wave: str = ""
+    confidence: str = "LOW"
+    expect: str = ""
+    wave_detail: str = ""
+    alternate: str = ""
     price_zones: list[dict] = field(default_factory=list)
     time_band_dates: Optional[tuple] = None
     time_cluster_dates: list = field(default_factory=list)
@@ -556,8 +745,8 @@ class Result:
 
 
 def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
-            basis: str = "close", swing_pct: float = 3.0, dtosc_set: int = 2,
-            ma: str = "sma", htf: Optional[str] = None,
+            basis: str = "close", swing_pct: Optional[float] = None,
+            dtosc_set: int = 2, ma: str = "sma", htf: Optional[str] = None,
             df: Optional[pd.DataFrame] = None,
             resolved: Optional[str] = None) -> Result:
     # --- data ---
@@ -591,57 +780,65 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     else:
         htf_status = {"K": None, "D": None, "dir": "n/a", "zone": "n/a", "cross": None}
 
-    # --- pivots + structure ---
-    piv = zigzag_pivots(series, swing_pct)
-    struct = classify_structure(piv)
+    # --- adaptive pivots + AUTO wave labeling ---
+    pct = swing_pct if swing_pct is not None else auto_swing_pct(df, series)
+    piv = zigzag_pivots(series, pct)
+    primary, alt = label_structure(piv)
     highs = [p for p in piv if p.kind == "H"]
     lows = [p for p in piv if p.kind == "L"]
-
-    # --- price target zones (pick EOW-C or EOW-5 from auto structure) ---
-    price_zones, eow_kind = [], ""
     ref = float(series.iloc[-1])
-    if len(piv) >= 4:
-        if struct.get("overlap"):  # treat as correction -> EOW-C
-            # last 3 legs as O(prior_start)->prior_end, A, B
-            p = piv[-4:]
-            prior_start, prior_end, A, B = p[0].price, p[1].price, p[2].price, p[3].price
-            comp = eow_c_targets(prior_start, prior_end, A, B)
-            eow_kind = "EOW-C (correction)"
-        else:                       # impulse -> EOW-5
-            p = piv[-5:] if len(piv) >= 5 else piv[-4:]
-            if len(p) >= 4:
-                W0, W1, W3, W4 = p[-4].price, p[-3].price, p[-2].price, p[-1].price
-                comp = eow_5_targets(W0, W1, W3, W4)
-                eow_kind = "EOW-5 (impulse)"
-            else:
-                comp = {}
-        if comp:
-            price_zones = cluster_zones(comp, ref, tol_pct=0.6, top=3)
 
-    # --- time band + cluster ---
+    # --- AUTO price target zones from the detected count ---
+    price_zones, eow_kind = [], "structure unclear"
+    comp = {}
+    if primary and primary.proj_pivots:
+        pp = [p.price for p in primary.proj_pivots]
+        if primary.proj_kind == "eow5" and len(pp) >= 4:
+            comp = eow_5_targets(pp[0], pp[1], pp[2], pp[3])
+            eow_kind = "EOW-5 (impulse W5)"
+        elif primary.proj_kind == "eowc" and len(pp) >= 4:
+            comp = eow_c_targets(pp[0], pp[1], pp[2], pp[3])
+            eow_kind = "EOW-C (correction Wave-C)"
+        elif primary.proj_kind == "thrust" and hasattr(primary, "_thrust"):
+            e, w, up = primary._thrust
+            sign = 1.0 if up else -1.0
+            comp = {"Thrust": {f"{r:.3f}x thrust": e + sign * w * r
+                               for r in (0.75, 1.0, 1.272, 1.618)}}
+            eow_kind = "TRIANGLE thrust (post-E)"
+    if comp:
+        price_zones = cluster_zones(comp, ref, tol_pct=0.6, top=4)
+
+    # --- time band + ATP/TimeRet from the labeled swings ---
     tband = time_band(highs, lows)
     tband_dates = None
     if tband:
         tband_dates = (idx_to_date(series.index, tband[0]),
                        idx_to_date(series.index, tband[1]))
     tcluster_dates = []
-    if len(piv) >= 4:
-        last = piv[-4:]
-        tcomp = {
-            "TimeRet": time_ret(last[0].idx, last[1].idx),
-            "ATP": atp_time(last[0].idx, last[1].idx, last[2].idx),
-        }
+    if primary and len(primary.proj_pivots) >= 3:
+        pp = primary.proj_pivots
+        tcomp = {"TimeRet": time_ret(pp[0].idx, pp[1].idx),
+                 "ATP": atp_time(pp[0].idx, pp[1].idx, pp[-1].idx)}
         for bar_idx, hits in time_cluster(tcomp, win=1):
             tcluster_dates.append((idx_to_date(series.index, bar_idx), hits))
 
-    # --- decision ---
-    dec = decision_levels(piv, struct, series)
+    dec = decision_levels(primary, piv)
+
+    alt_str = ""
+    if alt:
+        alt_str = f"{alt.pattern} / {alt.current_wave} (conf {alt.confidence})"
 
     return Result(
         ticker=resolved, asset=asset, interval=interval, basis=basis,
         last_close=ref, last_date=series.index[-1],
         htf_label=rule, htf_status=htf_status,
-        dtosc_status=st, dtosc_dlb=dlb, structure=struct, pivots=piv,
+        dtosc_status=st, dtosc_dlb=dlb, pivots=piv, swing_pct=pct,
+        wave_pattern=(primary.pattern if primary else "UNKNOWN"),
+        current_wave=(primary.current_wave if primary else "unclear"),
+        confidence=(primary.confidence if primary else "LOW"),
+        expect=(primary.expect if primary else ""),
+        wave_detail=(primary.detail if primary else ""),
+        alternate=alt_str,
         price_zones=price_zones, time_band_dates=tband_dates,
         time_cluster_dates=tcluster_dates, decision=dec, eow_kind=eow_kind,
     )
@@ -677,14 +874,21 @@ def print_report(r: Result) -> None:
     print(f"  DLB set{dlb['set']} {dlb['params']}: {dlb['dir']} / {dlb['zone']}"
           f"  -> {'AGREE' if dlb['agree'] else 'DISAGREE'} with primary")
 
-    # STRUCTURE
-    st = r.structure
-    print(f"\n[STRUCTURE] (auto — VERIFY)  {st.get('pattern')}")
-    print(f"  Current: {st.get('wave')}   |   bias: {st.get('bias')}")
+    # STRUCTURE (auto wave count)
+    print(f"\n[STRUCTURE] {r.wave_pattern}  |  confidence: {r.confidence}  "
+          f"(auto — verify)")
+    print(f"  Current: {r.current_wave}")
+    if r.expect:
+        print(f"  Expect : {r.expect}")
+    if r.wave_detail:
+        print(f"  Legs   : {r.wave_detail}")
+    if r.alternate:
+        print(f"  Alt    : {r.alternate}")
+    print(f"  Pivot threshold (adaptive): {r.swing_pct}%")
     if r.pivots:
-        tail = r.pivots[-5:]
+        tail = r.pivots[-6:]
         legs = "  ".join(f"{p.kind}:{p.price:.4g}@{fmt_date(p.date)}" for p in tail)
-        print(f"  Pivots(last5): {legs}")
+        print(f"  Pivots(last6): {legs}")
 
     # PRICE
     print(f"\n[PRICE]  {r.eow_kind or 'EOW target zones'}  (zones, not lines)")
@@ -791,8 +995,8 @@ def main(argv=None):
                     help="1d,1wk,1h,60m,30m,15m,5m (default 1d)")
     ap.add_argument("--basis", default="close", choices=["close", "range"],
                     help="Miner default = close")
-    ap.add_argument("--swing-pct", type=float, default=3.0,
-                    help="zigzag pivot threshold %% (try 2-5)")
+    ap.add_argument("--swing-pct", type=float, default=None,
+                    help="zigzag pivot threshold %% (default: adaptive ATR-based)")
     ap.add_argument("--dtosc-set", type=int, default=2, choices=[1, 2, 3, 4])
     ap.add_argument("--ma", default="sma", choices=["sma", "ema"],
                     help="DTosc smoothing (calibrate to Miner's chart)")
