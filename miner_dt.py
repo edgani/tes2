@@ -1027,5 +1027,218 @@ def main(argv=None):
     print_report(r)
 
 
+def _conf_color(c: str) -> str:
+    return {"HIGH": "green", "MED": "orange", "LOW": "red"}.get(c, "gray")
+
+
+def _plot(df, r):
+    """Plotly candlestick + pivots + EOW zones + time band. Falls back to None."""
+    try:
+        import plotly.graph_objects as go
+    except Exception:  # noqa: BLE001
+        return None
+    fig = go.Figure()
+    fig.add_trace(go.Candlestick(
+        x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
+        close=df["Close"], name="price", increasing_line_color="#26a69a",
+        decreasing_line_color="#ef5350"))
+    if r.pivots:
+        fig.add_trace(go.Scatter(
+            x=[p.date for p in r.pivots], y=[p.price for p in r.pivots],
+            mode="lines+markers+text", text=[p.kind for p in r.pivots],
+            textposition="top center", line=dict(color="#ffb74d", width=1.2),
+            marker=dict(size=6, color="#ffb74d"), name="pivots"))
+    for z in r.price_zones[:3]:
+        col = "rgba(38,166,154,0.18)" if z["groups"] >= 2 else "rgba(150,150,150,0.12)"
+        lo, hi = z["low"], max(z["high"], z["low"] * 1.0002)
+        fig.add_hrect(y0=lo, y1=hi, line_width=0, fillcolor=col)
+        fig.add_hline(y=z["mid"], line_dash="dot",
+                      line_color="#26a69a" if z["groups"] >= 2 else "#9e9e9e")
+    if r.time_band_dates:
+        fig.add_vrect(x0=r.time_band_dates[0], x1=r.time_band_dates[1],
+                      fillcolor="rgba(66,135,245,0.12)", line_width=0,
+                      annotation_text="Time Band", annotation_position="top left")
+    fig.update_layout(height=540, template="plotly_dark",
+                      xaxis_rangeslider_visible=False,
+                      margin=dict(l=0, r=0, t=24, b=0),
+                      legend=dict(orientation="h", y=1.02))
+    return fig
+
+
+def run_app():
+    """Streamlit UI entry point. Run with:  streamlit run miner_dt.py"""
+    import streamlit as st
+    import pandas as _pd
+
+    st.set_page_config(page_title="Dynamic Trader — Miner Engine",
+                       page_icon="📊", layout="wide")
+    st.title("📊 Dynamic Trader — Robert Miner Engine")
+    st.caption("Auto Elliott + Fibonacci price/time projection · close-based · "
+               "DTosc dual-TF + DLB · *Learn to trade, not forecast.*")
+
+    with st.sidebar:
+        st.header("Input")
+        ticker = st.text_input("Ticker", value="",
+                               placeholder="HUMI, USDJPY, BTC, GOLD, NVDA")
+        market = st.selectbox("Market",
+                              ["auto", "us", "idx", "forex", "commodity", "crypto"],
+                              help="IDX stocks (HUMI, BBCA): pick 'idx' → adds .JK")
+        interval = st.selectbox("Interval",
+                                ["1d", "1wk", "1h", "60m", "30m", "15m", "5m"], index=0)
+        c1, c2 = st.columns(2)
+        dtosc_set = c1.selectbox("DTosc set", [1, 2, 3, 4], index=1)
+        ma = c2.selectbox("DTosc MA", ["sma", "ema"], index=0,
+                          help="calibrate to Miner's chart")
+        mode = st.radio("Pivot threshold", ["Auto (ATR)", "Custom"], horizontal=True)
+        swing_pct = st.slider("Swing %", 0.5, 10.0, 3.0, 0.1) \
+            if mode == "Custom" else None
+        run = st.button("Analyze", type="primary", width="stretch")
+
+        st.divider()
+        with st.expander("🎯 Manual EOW (exact Miner reproduction)"):
+            ekind = st.radio("Kind", ["5 (impulse W5)", "c (correction C)"])
+            st.caption("EOW-5: W0, W1, W3, W4  ·  EOW-C: prior_start, prior_end, A, B")
+            mp = [st.number_input(f"Pivot {i+1}", value=0.0, format="%.6f",
+                                  key=f"mp{i}") for i in range(4)]
+            man = st.button("Compute EOW zone", width="stretch")
+
+    # ---------- manual EOW mode ----------
+    if man and any(x != 0 for x in mp):
+        kind = "5" if ekind.startswith("5") else "c"
+        comp, zones = zone_from_pivots(mp, kind)
+        st.subheader(f"{'EOW-5' if kind == '5' else 'EOW-C'} — exact projection")
+        rows = [{"group": g, "projection": lbl, "price": round(v, 6)}
+                for g, d in comp.items() for lbl, v in d.items()]
+        st.dataframe(_pd.DataFrame(rows), width="stretch", hide_index=True)
+        zr = [{"Zone": i, "Low": round(z["low"], 6), "High": round(z["high"], 6),
+               "Converge": "★" if z["groups"] >= 2 else "", "Score": z["score"],
+               "Members": ", ".join(z["members"])}
+              for i, z in enumerate(zones, 1)]
+        st.markdown("**Clustered zones** (★ = ≥2 sets = high-prob EOW zone)")
+        st.dataframe(_pd.DataFrame(zr), width="stretch", hide_index=True)
+        return
+
+    # ---------- need a ticker ----------
+    if not ticker:
+        st.info("👈 Masukin ticker di sidebar, klik **Analyze**. "
+                "Contoh: `HUMI` (Market=idx), `USDJPY`, `BTC`, `GOLD`, `NVDA`, `^GSPC`")
+        st.markdown("""
+**Ratio yang dipakai (verbatim Miner):**
+`Internal Ret` 0.382 / 0.50 / 0.618 / 0.786 · `External Ret` 1.27 / 1.62 / 2.62 ·
+`APP` 0.618 / 1.0 / 1.618 · `Time Ret` 0.382 / 0.50 / 0.618 / 1.0 / 1.618 ·
+`DTosc` sets (8,5,3,3)(13,8,5,5)(21,13,8,8)(34,21,13,13) OB75/OS25
+""")
+        return
+
+    # ---------- run analysis ----------
+    try:
+        cands, asset, _ = normalize_ticker(ticker, market)
+        ck = (tuple(cands), interval)
+        if st.session_state.get("_ck") != ck:
+            with st.spinner(f"Fetching {cands} …"):
+                df, resolved = fetch_data(list(cands), interval)
+            st.session_state["_ck"] = ck
+            st.session_state["_df"] = df
+            st.session_state["_res"] = resolved
+        df = st.session_state["_df"]
+        resolved = st.session_state["_res"]
+        r = analyze(df=df, resolved=resolved, interval=interval,
+                    swing_pct=swing_pct, dtosc_set=dtosc_set, ma=ma)
+        r.asset = asset
+    except SystemExit as e:
+        st.error(f"⚠️ {e}")
+        return
+    except Exception as e:  # noqa: BLE001
+        st.error(f"⚠️ Error: {e}")
+        st.exception(e)
+        return
+
+    # ---------- header ----------
+    h1, h2, h3, h4 = st.columns(4)
+    h1.metric("Ticker", r.ticker)
+    h2.metric("Last close", f"{r.last_close:.6g}")
+    h3.metric("As of", fmt_date(r.last_date))
+    h4.metric("Asset", r.asset)
+
+    # ---------- frame + momentum ----------
+    f, s, dlb = r.htf_status, r.dtosc_status, r.dtosc_dlb
+    m1, m2, m3 = st.columns(3)
+    m1.metric(f"FRAME · HTF {r.htf_label}", f"{f['dir']} / {f['zone']}",
+              help="Only trade in this direction (larger-TF momentum).")
+    m2.metric(f"DTosc {r.interval}  (K={s['K']} D={s['D']})",
+              f"{s['dir']} / {s['zone']}", delta=s.get("cross") or None)
+    m3.metric(f"DLB set{dlb['set']}", f"{dlb['dir']} / {dlb['zone']}",
+              delta="AGREE" if dlb["agree"] else "DISAGREE")
+
+    # ---------- structure ----------
+    st.markdown(
+        f"### Structure &nbsp; :{_conf_color(r.confidence)}[{r.confidence}] confidence")
+    sc1, sc2 = st.columns([2, 3])
+    with sc1:
+        st.markdown(f"**Pattern:** {r.wave_pattern}")
+        st.markdown(f"**Current:** {r.current_wave}")
+        if r.expect:
+            st.markdown(f"**Expect:** {r.expect}")
+        if r.alternate:
+            st.markdown(f"**Alternate:** {r.alternate}")
+        st.caption(f"Legs: {r.wave_detail}  ·  pivot thr {r.swing_pct}%")
+    with sc2:
+        st.markdown("**Decision (CLOSE basis)**")
+        if r.decision.get("trigger"):
+            t, dt = r.decision["trigger"]
+            st.success(f"Trigger — {t}  ·  ref {fmt_date(dt)}")
+        if r.decision.get("void"):
+            v, dt = r.decision["void"]
+            st.warning(f"Void — {v}  ·  ref {fmt_date(dt)}")
+        if not r.decision:
+            st.caption("insufficient structure for trigger/void")
+
+    # ---------- price zones ----------
+    st.markdown(f"### Price — {r.eow_kind}")
+    if r.price_zones:
+        if not any(z["groups"] >= 2 for z in r.price_zones):
+            st.caption("No multi-set convergence yet — top single projections "
+                       "(Miner trades the ZONE where ≥2 sets cluster).")
+        zr = [{"Zone": i,
+               "Low": round(z["low"], 6), "High": round(z["high"], 6),
+               "Mid": round(z["mid"], 6), "Sets": z["groups"],
+               "Score": z["score"], "★": "★" if z["groups"] >= 2 else "",
+               "Members": ", ".join(z["members"])}
+              for i, z in enumerate(r.price_zones, 1)]
+        st.dataframe(_pd.DataFrame(zr), width="stretch", hide_index=True)
+    else:
+        st.caption("Need ≥4 clean pivots — widen Swing % or use Manual EOW.")
+
+    # ---------- time ----------
+    t1, t2 = st.columns(2)
+    with t1:
+        st.markdown("**Time Band (turning period)**")
+        if r.time_band_dates:
+            st.info(f"{fmt_date(r.time_band_dates[0])} → {fmt_date(r.time_band_dates[1])}")
+        else:
+            st.caption("need ≥3 highs & ≥2 lows")
+    with t2:
+        st.markdown("**Cluster dates (DTP-style)**")
+        if r.time_cluster_dates:
+            st.write(", ".join(f"{fmt_date(dt)} (×{h})"
+                               for dt, h in r.time_cluster_dates[:3]))
+        else:
+            st.caption("—")
+
+    # ---------- chart ----------
+    st.markdown("### Chart")
+    fig = _plot(df, r)
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.line_chart(df["Close"])
+        st.caption("Install plotly for candlestick + pivots + zones overlay.")
+
+    st.caption("Auto wave/pivot read is a starting point — Miner's edge is "
+               "discretionary. Use Manual EOW to reproduce his exact numbers.")
+
+
 if __name__ == "__main__":
-    main()
+    # Streamlit Cloud runs this file; render the app UI.
+    # (CLI still available programmatically via main()/analyze().)
+    run_app()
