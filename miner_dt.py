@@ -578,6 +578,91 @@ def _weight(label: str) -> float:
     return 1.0
 
 
+APP_PROJ = ((0.618, 2.0), (1.000, 3.0), (1.618, 2.0))   # ratio, weight
+
+
+def swing_triples(pivots: list, kind: str) -> list:
+    """Consecutive 3-pivot triples of a shape. 'LHL' (Low-High-Low → up target)
+    or 'HLH' (High-Low-High → down target)."""
+    want = ["L", "H", "L"] if kind == "LHL" else ["H", "L", "H"]
+    return [pivots[i:i + 3] for i in range(len(pivots) - 2)
+            if [p.kind for p in pivots[i:i + 3]] == want]
+
+
+def _cluster_levels(levels: list, ref: float, tol_pct: float = 0.5,
+                    top: int = 4) -> tuple:
+    """levels: list of (price, label, weight). Returns (zones, raw_levels)."""
+    raw = [{"price": p, "label": lbl} for p, lbl, _w in levels]
+    if not levels:
+        return [], raw
+    levels = sorted(levels, key=lambda x: x[0])
+    tol = ref * tol_pct / 100.0
+    zones, used = [], [False] * len(levels)
+    for i in range(len(levels)):
+        if used[i]:
+            continue
+        grp = [levels[i]]
+        used[i] = True
+        for j in range(i + 1, len(levels)):
+            if not used[j] and levels[j][0] - grp[0][0] <= tol:
+                grp.append(levels[j])
+                used[j] = True
+        prices = [g[0] for g in grp]
+        labels = {g[1] for g in grp}
+        zones.append({"low": min(prices), "high": max(prices),
+                      "mid": float(np.mean(prices)),
+                      "score": round(sum(g[2] for g in grp), 1),
+                      "n": len(grp), "groups": len(labels),
+                      "members": sorted(labels)})
+    zones.sort(key=lambda z: (z["n"], z["score"]), reverse=True)
+    return zones[:top], raw
+
+
+def price_cluster_md(major: list, minor: list, direction: str, ref: float,
+                     tol_pct: float = 0.5) -> tuple:
+    """Miner-style price target: APP projected from MULTIPLE swing triples at
+    two degrees, then clustered. direction='up' → LHL triples (target ABOVE);
+    'down' → HLH triples (target BELOW). Returns (zones, raw_levels)."""
+    kind = "LHL" if direction == "up" else "HLH"
+    levels = []
+    for pivs, degw in ((major, 1.3), (minor, 0.8)):
+        for t in swing_triples(pivs, kind)[-6:]:
+            a, b, c = t[0].price, t[1].price, t[2].price
+            rng = b - a
+            for ratio, w in APP_PROJ:
+                levels.append((c + rng * ratio, f"App {ratio:.3f}", w * degw))
+    if direction == "up":
+        levels = [L for L in levels if L[0] > ref * 1.001]
+    else:
+        levels = [L for L in levels if L[0] < ref * 0.999]
+    return _cluster_levels(levels, ref, tol_pct)
+
+
+def time_cluster_md(major: list, minor: list, last_idx: int, win: int = 2) -> tuple:
+    """Miner-style reversal timing: project H-H and L-L cycles (two degrees) by
+    Fib ratios, cluster forward projections. Returns (ranked, peak_idx,
+    strength, members)."""
+    proj = []
+    for pivs, degw in ((major, 1.3), (minor, 0.8)):
+        for knd in ("H", "L"):
+            seq = [p for p in pivs if p.kind == knd]
+            for i in range(len(seq) - 1):
+                cyc = seq[i + 1].idx - seq[i].idx
+                if cyc <= 0:
+                    continue
+                for ratio in (0.618, 1.0, 1.618):
+                    proj.append((seq[i + 1].idx + int(round(cyc * ratio)), degw))
+    proj = [(x, w) for x, w in proj if x >= last_idx - 1]
+    if not proj:
+        return [], None, None, None
+    scored = {x: sum(w for y, w in proj if abs(y - x) <= win)
+              for x, _ in proj}
+    ranked = sorted(scored.items(), key=lambda kv: kv[1], reverse=True)
+    peak_idx = ranked[0][0]
+    members = [y for y, _w in proj if abs(y - peak_idx) <= win]
+    return ranked, peak_idx, len(members), members
+
+
 def cluster_zones(components: dict[str, dict], price_ref: float,
                   tol_pct: float = 0.6, top: int = 3) -> list[dict]:
     """
@@ -830,71 +915,33 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     lows = [p for p in piv if p.kind == "L"]
     ref = float(series.iloc[-1])
 
-    # --- AUTO price target zones from the detected count ---
+    # --- PRICE TARGET (Miner cluster): APP from many LHL/HLH triples, 2 degrees ---
+    # Direction from the wave read: up = expecting a HIGH (LHL triples → target
+    # above); down = expecting a LOW (HLH triples → target below). The cluster of
+    # many projections (small + large swings) IS the target — not one wave count.
     price_zones, eow_kind = [], "structure unclear"
-    comp = {}
-    if primary and primary.proj_pivots:
-        pp = [p.price for p in primary.proj_pivots]
-        if primary.proj_kind == "eow5" and len(pp) >= 4:
-            comp = eow_5_targets(pp[0], pp[1], pp[2], pp[3])
-            eow_kind = "EOW-5 (impulse W5)"
-        elif primary.proj_kind == "eowc" and len(pp) >= 4:
-            comp = eow_c_targets(pp[0], pp[1], pp[2], pp[3])
-            eow_kind = "EOW-C (correction Wave-C)"
-        elif primary.proj_kind == "thrust" and hasattr(primary, "_thrust"):
-            e, w, up = primary._thrust
-            sign = 1.0 if up else -1.0
-            comp = {"Thrust": {f"{r:.3f}x thrust": e + sign * w * r
-                               for r in (0.75, 1.0, 1.272, 1.618)}}
-            eow_kind = "TRIANGLE thrust (post-E)"
-    if comp:
-        price_zones = cluster_zones(comp, ref, tol_pct=0.6, top=4)
-    # flat projection levels (for labeled horizontal target lines)
     proj_levels = []
-    for grp, d in comp.items():
-        for lbl, v in d.items():
-            if v is not None and np.isfinite(v):
-                proj_levels.append({"price": float(v), "label": f"{grp} {lbl}"})
+    target_dir = primary.direction if (primary and primary.direction in ("up", "down")) \
+        else ("up" if ref >= float(series.iloc[0]) else "down")
+    price_zones, proj_levels = price_cluster_md(major_piv, minor_piv, target_dir, ref)
+    if primary:
+        eow_kind = {"eow5": "EOW-5 (impulse W5)", "eowc": "EOW-C (Wave-C)",
+                    "thrust": "Triangle thrust (post-E)"}.get(primary.proj_kind,
+                                                              "APP cluster")
 
-    # --- TIME: Miner-style projected turning point = where projections cluster ---
-    # Sources: TimeRet + ATP of the labeled wave swings + prior CYCLE (L-L, H-H),
-    # all in trading-day counts, projected forward. Peak of the cluster = the
-    # single most-probable reversal date (Miner: reversals hit within ~1 bar).
+    # --- TIME (Miner cluster): H-H & L-L cycles at 2 degrees, projected by Fib ---
     n_bars = len(series)
-    future_idx = []
-    if primary and len(primary.skeleton) >= 2:
-        sk = primary.skeleton
-        anchor = sk[-1].idx                       # last confirmed pivot
-        for i in range(1, len(sk)):
-            dur = sk[i].idx - sk[i - 1].idx
-            if dur <= 0:
-                continue
-            for rt in (0.382, 0.50, 0.618, 1.0, 1.618):
-                future_idx.append(anchor + int(round(dur * rt)))
-    for seq in (highs, lows):                     # cycle projections
-        if len(seq) >= 2:
-            cyc = seq[-1].idx - seq[-2].idx
-            if cyc > 0:
-                for rt in (1.0, 1.618):
-                    future_idx.append(seq[-1].idx + int(round(cyc * rt)))
-    future_idx = [x for x in future_idx if x >= n_bars - 2]   # forward-looking only
-
-    reversal_date = reversal_strength = reversal_window = None
+    ranked, peak_idx, reversal_strength, members = time_cluster_md(
+        major_piv, minor_piv, n_bars - 1,
+        win=2 if interval in ("1d", "1h", "60m", "30m", "15m", "5m") else 1)
+    reversal_date = reversal_window = None
     tcluster_dates = []
-    if future_idx:
-        win = 2 if interval in ("1d", "1h", "60m", "30m", "15m", "5m") else 1
-        # rank candidate dates by how many projections fall within +/- win
-        scored = {}
-        for x in set(future_idx):
-            scored[x] = sum(1 for y in future_idx if abs(y - x) <= win)
-        ranked = sorted(scored.items(), key=lambda kv: kv[1], reverse=True)
-        peak_idx, reversal_strength = ranked[0]
+    if peak_idx is not None:
         reversal_date = idx_to_date(series.index, peak_idx)
-        members = [y for y in future_idx if abs(y - peak_idx) <= win]
         reversal_window = (idx_to_date(series.index, min(members)),
                            idx_to_date(series.index, max(members)))
         for bi, hits in ranked[:3]:
-            tcluster_dates.append((idx_to_date(series.index, bi), hits))
+            tcluster_dates.append((idx_to_date(series.index, bi), int(round(hits))))
 
     # Time Band (Bressert) kept as secondary range context
     tband = time_band(highs, lows)
@@ -1144,28 +1191,12 @@ def _conf_color(c: str) -> str:
 
 
 def _target_zone(r):
-    """Direction-aware target: bottoms must be BELOW price, tops ABOVE.
-    Picks the strongest cluster in the correct direction (then nearest)."""
-    zones = r.price_zones
-    if not zones:
+    """Densest cluster zone. price_cluster_md already filtered to the target
+    direction (above ref for tops, below for bottoms) and sorted densest-first."""
+    if not r.price_zones:
         return None
-    last = r.last_close
-    pk, wd = r.proj_kind, r.wave_dir
-    want_below = ((pk == "eow5" and wd == "down") or (pk == "eowc" and wd == "down")
-                  or (pk == "thrust" and wd == "down"))
-    want_above = ((pk == "eow5" and wd == "up") or (pk == "eowc" and wd == "up")
-                  or (pk == "thrust" and wd == "up"))
-    conv = [z for z in zones if z["groups"] >= 2]
-    pool = conv if conv else zones
-    if want_below:
-        cand = [z for z in pool if z["mid"] < last * 0.999]
-        if cand:                                   # strongest, then nearest (highest mid)
-            return sorted(cand, key=lambda z: (z["groups"], z["score"], z["mid"]))[-1]
-    if want_above:
-        cand = [z for z in pool if z["mid"] > last * 1.001]
-        if cand:                                   # strongest, then nearest (lowest mid)
-            return sorted(cand, key=lambda z: (z["groups"], z["score"], -z["mid"]))[-1]
-    return pool[0]
+    conv = [z for z in r.price_zones if z.get("n", 1) >= 2 or z.get("groups", 1) >= 2]
+    return conv[0] if conv else r.price_zones[0]
 
 
 def _eta(r):
