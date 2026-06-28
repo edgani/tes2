@@ -300,8 +300,20 @@ def zigzag_pivots(series: pd.Series, pct: float = 3.0) -> list[Pivot]:
     return _alternate(piv)
 
 
-def classify_structure(piv: list[Pivot]) -> dict:
-    """Legacy crude overlap classifier (kept as fallback)."""
+def degree_pivots(series: pd.Series, base_pct: float):
+    """Two-degree pivots like Miner. MAJOR = adaptive base (the primary count,
+    kept stable); MINOR = finer swings for sub-wave labels."""
+    major = zigzag_pivots(series, base_pct)
+    minor = zigzag_pivots(series, base_pct * 0.5)
+    if len(minor) <= len(major):
+        minor = zigzag_pivots(series, base_pct * 0.4)
+    return major, minor
+
+
+def subwaves_between(minor: list, p_start: Pivot, p_end: Pivot) -> list:
+    """Minor pivots strictly inside [p_start, p_end] — the sub-structure of a
+    major wave (for the smaller-degree labels)."""
+    return [q for q in minor if p_start.idx < q.idx < p_end.idx]
     if len(piv) < 3:
         return {"pattern": "n/a", "overlap": None}
     last = piv[-6:]
@@ -741,6 +753,7 @@ class Result:
     dtosc_status: dict
     dtosc_dlb: dict
     pivots: list[Pivot]
+    minor_pivots: list = field(default_factory=list)
     swing_pct: float = 0.0
     wave_pattern: str = "UNKNOWN"
     current_wave: str = ""
@@ -808,9 +821,10 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     else:
         htf_status = {"K": None, "D": None, "dir": "n/a", "zone": "n/a", "cross": None}
 
-    # --- adaptive pivots + AUTO wave labeling ---
+    # --- two-degree pivots (Miner nests degrees): count on MAJOR swings ---
     pct = swing_pct if swing_pct is not None else auto_swing_pct(df, series)
-    piv = zigzag_pivots(series, pct)
+    major_piv, minor_piv = degree_pivots(series, pct)
+    piv = major_piv                       # primary count uses the larger degree
     primary, alt = label_structure(piv)
     highs = [p for p in piv if p.kind == "H"]
     lows = [p for p in piv if p.kind == "L"]
@@ -895,17 +909,30 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     if alt:
         alt_str = f"{alt.pattern} / {alt.current_wave} (conf {alt.confidence})"
 
-    # wave labels for the chart (1-2-3-4-5 / A-B-C style)
+    # wave labels — TWO degrees (Miner style): MAJOR (1)(2)(3) + minor sub-waves
     wave_labels = []
     if primary and primary.skeleton:
-        names = {"IMPULSE": ["0", "1", "2", "3", "4"],
-                 "ABC": ["x", "0", "A", "B"],
-                 "TRIANGLE": ["A", "B", "C", "D", "E", "x"]}.get(primary.pattern, [])
-        for p, nm in zip(primary.skeleton, names):
-            wave_labels.append({"date": p.date, "price": p.price, "label": nm})
-        cur = {"eow5": "5", "eowc": "C", "thrust": "→"}.get(primary.proj_kind, "?")
+        major_names = {"IMPULSE": ["(0)", "(1)", "(2)", "(3)", "(4)"],
+                       "ABC": ["x", "(0)", "(A)", "(B)"],
+                       "TRIANGLE": ["(A)", "(B)", "(C)", "(D)", "(E)", "x"]}.get(
+            primary.pattern, [])
+        for pv, nm in zip(primary.skeleton, major_names):
+            wave_labels.append({"date": pv.date, "price": pv.price,
+                                "label": nm, "deg": "major", "kind": pv.kind})
+        cur = {"eow5": "(5)", "eowc": "(C)", "thrust": "→"}.get(primary.proj_kind, "?")
+        cur_kind = "H" if primary.direction == "up" else "L"
         wave_labels.append({"date": series.index[-1], "price": float(series.iloc[-1]),
-                            "label": cur + "?"})
+                            "label": cur + "?", "deg": "major", "kind": cur_kind})
+        # minor sub-waves inside the CURRENT (last) major wave
+        sk = primary.skeleton
+        seg_start = sk[-1]
+        cur_pivot = Pivot(len(series) - 1, series.index[-1], float(series.iloc[-1]),
+                          "H" if primary.direction == "up" else "L")
+        subs = subwaves_between(minor_piv, seg_start, cur_pivot)
+        sub_letters = ["i", "ii", "iii", "iv", "v"]
+        for k, q in enumerate(subs[:5]):
+            wave_labels.append({"date": q.date, "price": q.price,
+                                "label": sub_letters[k], "deg": "minor", "kind": q.kind})
 
     return Result(
         ticker=resolved, asset=asset, interval=interval, basis=basis,
@@ -921,6 +948,7 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
         proj_kind=(primary.proj_kind if primary else ""),
         wave_dir=(primary.direction if primary else ""),
         wave_labels=wave_labels, dtosc_k=K, dtosc_d=D, proj_levels=proj_levels,
+        minor_pivots=minor_piv,
         price_zones=price_zones, time_band_dates=tband_dates,
         time_cluster_dates=tcluster_dates, reversal_date=reversal_date,
         reversal_strength=reversal_strength, reversal_window=reversal_window,
@@ -1265,84 +1293,113 @@ _CIRCLED = {"0": "⓪", "1": "①", "2": "②", "3": "③", "4": "④", "5": "�
             "D": "Ⓓ", "E": "Ⓔ", "x": "·", "→": "▲", "→?": "▲"}
 
 
-def _plot(df, r):
-    """CLEAN Miner-style: candles + circled waves + ONE target line (price label)
-    + ONE reversal-date line (date label) + DTosc panel. No clutter."""
+def _plot(df, r, plan=None):
+    """Miner-style: ALL numbers INSIDE the chart. Right edge = price targets +
+    ratios; top = reversal dates + cluster count; corner = setup summary box;
+    pivots = circled waves; bottom = DTosc."""
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
     except Exception:  # noqa: BLE001
         return None
+    import re as _re
 
     close = df["Close"]
     last_x, last_y = df.index[-1], float(close.iloc[-1])
     gaps = pd.Series(df.index).diff().dropna()
     gap = gaps.median() if len(gaps) else pd.Timedelta(days=1)
-    future_x = last_x + gap * 6
+    future_x = last_x + gap * 10                       # room for right-edge labels
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                        row_heights=[0.76, 0.24], vertical_spacing=0.04,
-                        subplot_titles=("", "DTosc (momentum)"))
+                        row_heights=[0.78, 0.22], vertical_spacing=0.03,
+                        subplot_titles=("", "DTosc"))
 
-    # candles
     fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"],
         close=close, name="harga", increasing_line_color="#26a69a",
         decreasing_line_color="#ef5350", showlegend=False), row=1, col=1)
-
-    # faint swing skeleton + circled wave labels
     if r.pivots:
         fig.add_trace(go.Scatter(
             x=[p.date for p in r.pivots], y=[p.price for p in r.pivots],
             mode="lines", line=dict(color="#90a4ae", width=1, dash="dot"),
             name="swing", showlegend=False), row=1, col=1)
     for i, w in enumerate(r.wave_labels):
-        is_cur = (i == len(r.wave_labels) - 1)
-        lab = _CIRCLED.get(w["label"], w["label"])
-        c = "#69f0ae" if is_cur else "#ff8a80"
-        up = w["label"] in ("1", "3", "5", "5?", "B", "D")
-        fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{lab}</b>",
-                           showarrow=False, font=dict(color=c, size=18),
-                           yshift=15 if up else -15, xref="x", yref="y")
-
-    # ===== ONE target line with PRICE label =====
-    z = _target_zone(r)
-    if z:
-        is_bottom = (r.wave_dir == "down") if r.proj_kind in ("eow5", "eowc") \
-            else (r.wave_dir == "up")  # thrust up = upside target
-        tag = "DASAR" if (z["mid"] < last_y) else "PUNCAK"
-        tcol = "#26a69a" if z["mid"] < last_y else "#ff5252"
-        lo, hi = z["low"], max(z["high"], z["low"] * 1.0004)
-        if abs(hi - lo) > 1e-9:
-            fig.add_shape(type="rect", x0=df.index[0], x1=future_x, y0=lo, y1=hi,
-                          fillcolor="rgba(38,166,154,0.10)" if z["mid"] < last_y
-                          else "rgba(239,83,80,0.10)", line_width=0,
-                          xref="x", yref="y", layer="below")
-        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=z["mid"], y1=z["mid"],
-                      line=dict(color=tcol, width=1.5, dash="dash"),
-                      xref="x", yref="y")
-        fig.add_annotation(x=future_x, y=z["mid"],
-                           text=f"🎯 {tag} ≈ {z['mid']:.6g}", showarrow=False,
-                           xanchor="left", xshift=4, bgcolor="rgba(0,0,0,0.55)",
-                           font=dict(color=tcol, size=13, family="Arial Black"),
+        is_cur = (i == len(r.wave_labels) - 1 or w["label"].endswith("?"))
+        minor = w.get("deg") == "minor"
+        up = w.get("kind") == "H"
+        if minor:
+            color, size = "#80cbc4", 10
+        elif is_cur:
+            color, size = "#69f0ae", 17
+        else:
+            color, size = "#ffd54f", 16
+        fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{w['label']}</b>",
+                           showarrow=False, font=dict(color=color, size=size),
+                           yshift=(13 if up else -13) if not minor else (9 if up else -9),
                            xref="x", yref="y")
 
-    # ===== ONE reversal-date line with DATE label =====
-    if r.reversal_date is not None:
-        strg = f"  ({r.reversal_strength}×)" if (r.reversal_strength or 0) > 1 else ""
-        # shade the cluster window faintly
-        if r.reversal_window:
-            fig.add_vrect(x0=r.reversal_window[0], x1=r.reversal_window[1],
-                          fillcolor="rgba(66,135,245,0.10)", line_width=0,
-                          row=1, col=1)
-        fig.add_shape(type="line", x0=r.reversal_date, x1=r.reversal_date,
-                      y0=0, y1=1, yref="paper", xref="x",
-                      line=dict(color="#42a5f5", width=1.5, dash="dash"))
-        fig.add_annotation(x=r.reversal_date, y=1.0, yref="paper", xref="x",
-                           text=f"📅 Reversal {fmt_date(r.reversal_date)}{strg}",
+    # ===== RIGHT EDGE: price target labels + Fib ratios (Miner style) =====
+    tgt = _target_zone(r)
+    seen = []
+    for lv in sorted(r.proj_levels, key=lambda x: x["price"]):
+        price = lv["price"]
+        if not (last_y * 0.5 < price < last_y * 1.8):
+            continue
+        if any(abs(price - s) / max(abs(price), 1e-9) < 0.004 for s in seen):
+            continue
+        seen.append(price)
+        mt = _re.search(r"(\d\.\d{2,3})", lv["label"])
+        ratio = mt.group(1) if mt else ""
+        kind = ("App" if "App" in lv["label"] else
+                "ExtRet" if "Ext" in lv["label"] else "Ret")
+        is_tgt = tgt and abs(price - tgt["mid"]) < 1e-6
+        above = price >= last_y
+        col = "#ffd54f" if is_tgt else ("#26a69a" if above else "#ff9800")
+        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=price, y1=price,
+                      line=dict(color=col, width=1.6 if is_tgt else 1,
+                                dash="solid" if is_tgt else "dot"),
+                      opacity=0.9 if is_tgt else 0.45, xref="x", yref="y",
+                      layer="below")
+        txt = (f"🎯 {price:.6g}  {kind} {ratio}" if is_tgt
+               else f"{price:.6g}  {kind} {ratio}")
+        fig.add_annotation(x=future_x, y=price, text=txt, showarrow=False,
+                           xanchor="left", xshift=3,
+                           font=dict(color=col, size=12 if is_tgt else 10,
+                                     family="Arial Black" if is_tgt else "Arial"),
+                           bgcolor="rgba(0,0,0,0.5)" if is_tgt else None,
+                           xref="x", yref="y")
+
+    # ===== TOP: reversal date(s) + cluster count (Miner time labels) =====
+    rev_dates = r.time_cluster_dates[:3] if r.time_cluster_dates else []
+    for j, (dt, hits) in enumerate(rev_dates):
+        main = (r.reversal_date is not None and dt == r.reversal_date)
+        col = "#42a5f5" if main else "#7e9bbf"
+        fig.add_shape(type="line", x0=dt, x1=dt, y0=0, y1=1, yref="paper",
+                      xref="x", line=dict(color=col, width=1.6 if main else 1,
+                                          dash="dash"), opacity=0.8 if main else 0.4)
+        fig.add_annotation(x=dt, y=1.0, yref="paper", xref="x",
+                           text=f"📅 {pd.Timestamp(dt).strftime('%d%b%y')} ×{hits}",
                            showarrow=False, yanchor="bottom", xanchor="center",
-                           font=dict(color="#42a5f5", size=12),
-                           bgcolor="rgba(0,0,0,0.55)")
+                           font=dict(color=col, size=11,
+                                     family="Arial Black" if main else "Arial"),
+                           bgcolor="rgba(0,0,0,0.5)")
+
+    # ===== CORNER: setup summary box (in-chart, like Miner's callouts) =====
+    if plan:
+        wlabel = {"eow5": "Wave-5", "eowc": "Wave-C", "thrust": "Triangle E"}.get(
+            r.proj_kind, r.wave_pattern)
+        arrow = "⬇" if plan.get("expecting_bottom") or \
+            (plan.get("is_thrust") and r.wave_dir == "down") else "⬆"
+        box = (f"<b>{r.ticker} · {wlabel} {arrow}</b>  ({r.interval}, conf {r.confidence})<br>"
+               f"🎯 {plan['topbottom']}: {plan['target_price_txt']}<br>"
+               f"📅 Reversal: {plan['rev_date_txt']}{plan['strength_txt']}<br>"
+               f"➡ {plan['side']}<br>"
+               f"Entry: {plan['entry_rule']}")
+        fig.add_annotation(x=0.005, y=0.985, xref="paper", yref="paper",
+                           text=box, showarrow=False, xanchor="left", yanchor="top",
+                           align="left", font=dict(color="#eceff1", size=11),
+                           bgcolor="rgba(20,28,40,0.82)", bordercolor="#42a5f5",
+                           borderwidth=1, borderpad=6)
 
     # ===== DTosc panel =====
     if r.dtosc_k is not None:
@@ -1362,11 +1419,10 @@ def _plot(df, r):
         fig.update_yaxes(range=[0, 100], row=2, col=1)
 
     fig.update_xaxes(range=[df.index[0], future_x + gap * 2])
-    fig.update_layout(height=620, template="plotly_dark",
+    fig.update_layout(height=660, template="plotly_dark",
                       xaxis_rangeslider_visible=False,
-                      margin=dict(l=0, r=0, t=30, b=0),
-                      legend=dict(orientation="h", y=1.04),
-                      hovermode="x unified")
+                      margin=dict(l=0, r=0, t=34, b=0),
+                      showlegend=False, hovermode="x unified")
     return fig
 
 
@@ -1526,27 +1582,24 @@ def run_app():
     h3.metric("Per tanggal", fmt_date(r.last_date))
     h4.metric("Jenis aset", r.asset)
 
-    # ====================  RENCANA TRADING (plain language)  ====================
     p = trade_plan(r)
+
+    # ====================  CHART FIRST (semua angka di dalam chart)  ============
     cc = _conf_color(p["confidence"])
-    st.markdown(f"## 📋 Rencana Trading &nbsp;—&nbsp; "
-                f":{cc}[keyakinan {p['confidence']}]")
+    st.markdown(f"### 📈 Chart &nbsp;—&nbsp; :{cc}[keyakinan {p['confidence']}]")
+    fig = _plot(df, r, p)
+    if fig is not None:
+        st.plotly_chart(fig, width="stretch")
+    else:
+        st.line_chart(df["Close"])
+        st.caption("Install plotly untuk chart lengkap.")
+    st.caption("Baca chart: **kotak pojok** = ringkasan setup · **angka kanan** = "
+               "target harga + ratio Fib (🎯 = target utama) · **📅 atas** = perkiraan "
+               "tanggal reversal (×N = berapa proyeksi waktu numpuk) · **wave bulet** "
+               "①②③④⑤/ⒶⒷⒸⒹⒺ (merah=selesai, hijau=jalan) · **DTosc bawah** "
+               "(>75 jenuh beli, <25 jenuh jual).")
 
-    st.markdown(f"**Posisi sekarang:** {r.wave_pattern} — lagi di {p['now']}.")
-
-    # the three things that matter, with REAL numbers
-    a, b, c = st.columns(3)
-    a.metric("Lagi nyari apa?", p["topbottom"])
-    b.metric(f"Perkiraan harga {p['topbottom'].split()[0].lower()}",
-             f"≈ {p['target_num']}",
-             help=f"Zona target: {p['target_price_txt']}")
-    c.metric("Perkiraan tanggal reversal", p["rev_date_txt"],
-             help=f"Jendela: {p['eta_txt']}. Makin banyak proyeksi numpuk = makin kuat.")
-    st.markdown(f"💰 **Perkiraan harga {p['topbottom']}:** {p['target_price_txt']}  "
-                f"&nbsp;|&nbsp; 📅 **Perkiraan tanggal reversal:** {p['rev_date_txt']}"
-                f"{p['strength_txt']}  (jendela {p['eta_txt']})")
-
-    # the actionable box
+    # ====================  RINGKAS: aksi + penjelasan  =========================
     if p["expecting_bottom"] or (p["is_thrust"] and r.wave_dir == "up"):
         st.success(f"### 🟢 {p['headline']}")
     elif p["expecting_top"] or (p["is_thrust"] and r.wave_dir == "down"):
@@ -1556,33 +1609,17 @@ def run_app():
 
     g1, g2 = st.columns([3, 2])
     with g1:
+        st.markdown(f"**Posisi:** {r.wave_pattern} — {p['now']}")
         st.markdown(f"**Apa yang terjadi:** {p['entry_explain']}")
-        st.markdown("**Kapan boleh masuk (ENTRY):**")
-        st.markdown(f"> ✅ {p['entry_rule']}")
-        st.markdown("**Stop / batal kalau:**")
-        st.markdown(f"> 🛑 {p['stop_rule']}")
+        st.markdown(f"**ENTRY:** ✅ {p['entry_rule']}")
+        st.markdown(f"**STOP/batal:** 🛑 {p['stop_rule']}")
     with g2:
-        st.markdown(f"**Arah trade:** {p['side']}")
-        st.markdown(f"**Target harga:** {p['target_price_txt']}")
-        st.markdown(f"**Setelah masuk:** {p['profit']}")
+        st.markdown(f"**🎯 Target {p['topbottom']}:** {p['target_price_txt']}")
+        st.markdown(f"**📅 Reversal:** {p['rev_date_txt']}{p['strength_txt']}")
+        st.markdown(f"**➡ Arah:** {p['side']}")
         st.info(p["align_note"])
-
-    st.caption("Aturan main Miner: harga gerak dalam ZONA (bukan 1 garis pas), "
-               "dan semua pakai harga PENUTUPAN (close). Tunggu konfirmasi — "
-               "jangan nebak. *Learn to trade, not forecast.*")
-
-    # ---------- chart (price + waves + zones + DTosc) ----------
-    st.markdown("### 📈 Chart")
-    st.caption("**Atas:** candle + wave bulet ①②③④⑤ / ⒶⒷⒸⒹⒺ (merah=selesai, "
-               "hijau=berjalan) + **garis 🎯 = target harga top/bottom** + "
-               "**garis biru 📅 = perkiraan tanggal reversal** (×N = berapa proyeksi "
-               "waktu numpuk di situ). **Bawah: DTosc** (>75 jenuh beli, <25 jenuh jual).")
-    fig = _plot(df, r)
-    if fig is not None:
-        st.plotly_chart(fig, width="stretch")
-    else:
-        st.line_chart(df["Close"])
-        st.caption("Install plotly untuk chart lengkap (candle + wave + DTosc).")
+    st.caption("Aturan Miner: target itu ZONA (bukan 1 garis), pakai harga PENUTUPAN, "
+               "tunggu konfirmasi. *Learn to trade, not forecast.*")
 
     # ---------- multi-timeframe correlation (Dual Time Frame) ----------
     st.markdown("### 🔭 Korelasi Timeframe (Weekly · Daily · 4H)")
