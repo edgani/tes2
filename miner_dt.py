@@ -1324,22 +1324,44 @@ _CIRCLED = {"0": "⓪", "1": "①", "2": "②", "3": "③", "4": "④", "5": "�
             "D": "Ⓓ", "E": "Ⓔ", "x": "·", "→": "▲", "→?": "▲"}
 
 
+def _runs_mask(values, lo=None, hi=None):
+    """Contiguous index runs where lo<=v (if hi None) or v<=hi (if lo None)."""
+    out, i, n = [], 0, len(values)
+    def hit(v):
+        if v != v:  # NaN
+            return False
+        if lo is not None:
+            return v >= lo
+        return v <= hi
+    while i < n:
+        if hit(values[i]):
+            j = i
+            while j + 1 < n and hit(values[j + 1]):
+                j += 1
+            out.append((i, j))
+            i = j + 1
+        else:
+            i += 1
+    return out
+
+
 def _plot(df, r, plan=None):
-    """Miner-style: ALL numbers INSIDE the chart. Right edge = price targets +
-    ratios; top = reversal dates + cluster count; corner = setup summary box;
-    pivots = circled waves; bottom = DTosc."""
+    """Clean Miner-style chart. Projection = horizontal dashed lines with (price)
+    on the right + reversal date; targets shown BOTH directions (current move +
+    post-reversal); waves at two font sizes (major big / minor small); DTosc with
+    green (oversold) / red (overbought) extreme boxes. No corner box."""
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
     except Exception:  # noqa: BLE001
         return None
-    import re as _re
 
     close = df["Close"]
     last_x, last_y = df.index[-1], float(close.iloc[-1])
     gaps = pd.Series(df.index).diff().dropna()
     gap = gaps.median() if len(gaps) else pd.Timedelta(days=1)
-    future_x = last_x + gap * 10                       # room for right-edge labels
+    future_x = last_x + gap * 12
+    line_x0 = df.index[max(0, len(df) - 34)]          # lines on the right only
 
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                         row_heights=[0.78, 0.22], vertical_spacing=0.03,
@@ -1352,107 +1374,118 @@ def _plot(df, r, plan=None):
     if r.pivots:
         fig.add_trace(go.Scatter(
             x=[p.date for p in r.pivots], y=[p.price for p in r.pivots],
-            mode="lines", line=dict(color="#90a4ae", width=1, dash="dot"),
+            mode="lines", line=dict(color="#8a9aa8", width=1, dash="dot"),
             name="swing", showlegend=False), row=1, col=1)
+
+    # --- waves: MAJOR big, minor small (font size = degree, like Miner) ---
     for i, w in enumerate(r.wave_labels):
-        is_cur = (i == len(r.wave_labels) - 1 or w["label"].endswith("?"))
+        is_cur = w["label"].endswith("?")
         minor = w.get("deg") == "minor"
         up = w.get("kind") == "H"
         if minor:
-            color, size = "#80cbc4", 10
+            color, size, sh = "#9aa7b2", 9, (8 if up else -8)
         elif is_cur:
-            color, size = "#69f0ae", 17
+            color, size, sh = "#69f0ae", 20, (16 if up else -16)
         else:
-            color, size = "#ffd54f", 16
+            color, size, sh = "#ffd54f", 19, (16 if up else -16)
         fig.add_annotation(x=w["date"], y=w["price"], text=f"<b>{w['label']}</b>",
                            showarrow=False, font=dict(color=color, size=size),
-                           yshift=(13 if up else -13) if not minor else (9 if up else -9),
-                           xref="x", yref="y")
+                           yshift=sh, xref="x", yref="y")
 
-    # ===== RIGHT EDGE: price target labels + Fib ratios (Miner style) =====
+    # --- PROJECTION: clean (price) lines both directions + reversal date ---
+    primary_dir = r.wave_dir if r.wave_dir in ("up", "down") \
+        else ("up" if last_y >= float(close.iloc[0]) else "down")
+    opp_dir = "up" if primary_dir == "down" else "down"
     tgt = _target_zone(r)
-    seen = []
-    for lv in sorted(r.proj_levels, key=lambda x: x["price"]):
-        price = lv["price"]
-        if not (last_y * 0.5 < price < last_y * 1.8):
-            continue
-        if any(abs(price - s) / max(abs(price), 1e-9) < 0.004 for s in seen):
-            continue
-        seen.append(price)
-        mt = _re.search(r"(\d\.\d{2,3})", lv["label"])
-        ratio = mt.group(1) if mt else ""
-        kind = ("App" if "App" in lv["label"] else
-                "ExtRet" if "Ext" in lv["label"] else "Ret")
-        is_tgt = tgt and abs(price - tgt["mid"]) < 1e-6
-        above = price >= last_y
-        col = "#ffd54f" if is_tgt else ("#26a69a" if above else "#ff9800")
-        fig.add_shape(type="line", x0=df.index[0], x1=future_x, y0=price, y1=price,
-                      line=dict(color=col, width=1.6 if is_tgt else 1,
-                                dash="solid" if is_tgt else "dot"),
-                      opacity=0.9 if is_tgt else 0.45, xref="x", yref="y",
-                      layer="below")
-        txt = (f"🎯 {price:.6g}  {kind} {ratio}" if is_tgt
-               else f"{price:.6g}  {kind} {ratio}")
-        fig.add_annotation(x=future_x, y=price, text=txt, showarrow=False,
-                           xanchor="left", xshift=3,
-                           font=dict(color=col, size=12 if is_tgt else 10,
-                                     family="Arial Black" if is_tgt else "Arial"),
-                           bgcolor="rgba(0,0,0,0.5)" if is_tgt else None,
+    rev_txt = ""
+    if r.reversal_date is not None:
+        sx = f" ×{r.reversal_strength}" if (r.reversal_strength or 0) > 1 else ""
+        rev_txt = f" · {pd.Timestamp(r.reversal_date).strftime('%d%b%y')}{sx}"
+
+    def _line(price, label, color, main=False):
+        if not (last_y * 0.45 < price < last_y * 1.9):
+            return
+        fig.add_shape(type="line", x0=line_x0, x1=future_x, y0=price, y1=price,
+                      line=dict(color=color, width=2.2 if main else 1.1,
+                                dash="solid" if main else "dash"),
+                      opacity=0.95 if main else 0.6, xref="x", yref="y")
+        fig.add_annotation(x=future_x, y=price, text=label, showarrow=False,
+                           xanchor="left", xshift=4,
+                           font=dict(color=color, size=13 if main else 11,
+                                     family="Arial Black" if main else "Arial"),
+                           bgcolor="rgba(0,0,0,0.55)" if main else None,
                            xref="x", yref="y")
 
-    # ===== TOP: reversal date(s) + cluster count (Miner time labels) =====
-    rev_dates = r.time_cluster_dates[:3] if r.time_cluster_dates else []
-    for j, (dt, hits) in enumerate(rev_dates):
+    # primary-direction targets (where price is heading now)
+    for z in r.price_zones[:3]:
+        is_main = tgt and abs(z["mid"] - tgt["mid"]) < 1e-6
+        col = "#ffd54f" if is_main else ("#ff9800" if z["mid"] < last_y else "#26c6da")
+        if is_main:
+            adir = "⬇" if z["mid"] < last_y else "⬆"
+            _line(z["mid"], f"🎯 {adir} {z['mid']:.6g}{rev_txt}", col, main=True)
+        else:
+            _line(z["mid"], f"({z['mid']:.6g})", col)
+    # post-reversal targets (opposite direction) — lighter
+    try:
+        opp_zones, _ = price_cluster_md(r.pivots, r.minor_pivots, opp_dir, last_y)
+    except Exception:  # noqa: BLE001
+        opp_zones = []
+    for z in opp_zones[:2]:
+        pre = "↗" if z["mid"] > last_y else "↘"
+        _line(z["mid"], f"{pre} ({z['mid']:.6g})", "#7e9bbf")
+
+    # reversal date vertical marker(s) + direction headline at top-center
+    for dt, hits in (r.time_cluster_dates[:3] if r.time_cluster_dates else []):
         main = (r.reversal_date is not None and dt == r.reversal_date)
-        col = "#42a5f5" if main else "#7e9bbf"
-        fig.add_shape(type="line", x0=dt, x1=dt, y0=0, y1=1, yref="paper",
-                      xref="x", line=dict(color=col, width=1.6 if main else 1,
-                                          dash="dash"), opacity=0.8 if main else 0.4)
+        col = "#42a5f5" if main else "#5b6e84"
+        fig.add_shape(type="line", x0=dt, x1=dt, y0=0, y1=1, yref="paper", xref="x",
+                      line=dict(color=col, width=2 if main else 1, dash="dash"),
+                      opacity=0.85 if main else 0.4)
         fig.add_annotation(x=dt, y=1.0, yref="paper", xref="x",
                            text=f"📅 {pd.Timestamp(dt).strftime('%d%b%y')} ×{hits}",
                            showarrow=False, yanchor="bottom", xanchor="center",
                            font=dict(color=col, size=11,
                                      family="Arial Black" if main else "Arial"),
                            bgcolor="rgba(0,0,0,0.5)")
+    # one clear direction headline (replaces the box) — in empty top area
+    if tgt:
+        adir, dword = ("⬇", "TURUN") if tgt["mid"] < last_y else ("⬆", "NAIK")
+        dcol = "#ff7043" if tgt["mid"] < last_y else "#26c6da"
+        head = (f"<b>{r.ticker} {adir} {dword}</b>  → target {tgt['mid']:.6g}"
+                + (f"  ·  reversal {pd.Timestamp(r.reversal_date).strftime('%d%b%y')}"
+                   if r.reversal_date is not None else ""))
+        fig.add_annotation(x=0.5, y=1.10, xref="paper", yref="paper", text=head,
+                           showarrow=False, xanchor="center",
+                           font=dict(color=dcol, size=13),
+                           bgcolor="rgba(0,0,0,0.45)")
 
-    # ===== CORNER: setup summary box (in-chart, like Miner's callouts) =====
-    if plan:
-        wlabel = {"eow5": "Wave-5", "eowc": "Wave-C", "thrust": "Triangle E"}.get(
-            r.proj_kind, r.wave_pattern)
-        arrow = "⬇" if plan.get("expecting_bottom") or \
-            (plan.get("is_thrust") and r.wave_dir == "down") else "⬆"
-        box = (f"<b>{r.ticker} · {wlabel} {arrow}</b>  ({r.interval}, conf {r.confidence})<br>"
-               f"🎯 {plan['topbottom']}: {plan['target_price_txt']}<br>"
-               f"📅 Reversal: {plan['rev_date_txt']}{plan['strength_txt']}<br>"
-               f"➡ {plan['side']}<br>"
-               f"Entry: {plan['entry_rule']}")
-        fig.add_annotation(x=0.005, y=0.985, xref="paper", yref="paper",
-                           text=box, showarrow=False, xanchor="left", yanchor="top",
-                           align="left", font=dict(color="#eceff1", size=11),
-                           bgcolor="rgba(20,28,40,0.82)", bordercolor="#42a5f5",
-                           borderwidth=1, borderpad=6)
-
-    # ===== DTosc panel =====
+    # --- DTosc panel with GREEN (oversold) / RED (overbought) extreme boxes ---
     if r.dtosc_k is not None:
-        fig.add_hrect(y0=75, y1=100, fillcolor="rgba(239,83,80,0.12)",
-                      line_width=0, row=2, col=1)
-        fig.add_hrect(y0=0, y1=25, fillcolor="rgba(38,166,154,0.12)",
-                      line_width=0, row=2, col=1)
+        kv = list(r.dtosc_k.values)
+        kidx = list(r.dtosc_k.index)
+        for s, e in _runs_mask(kv, hi=25):            # green = oversold extreme
+            fig.add_shape(type="rect", x0=kidx[s], x1=kidx[e], y0=0, y1=25,
+                          fillcolor="rgba(38,200,90,0.40)", line_width=0,
+                          row=2, col=1)
+        for s, e in _runs_mask(kv, lo=75):            # red = overbought extreme
+            fig.add_shape(type="rect", x0=kidx[s], x1=kidx[e], y0=75, y1=100,
+                          fillcolor="rgba(239,83,80,0.40)", line_width=0,
+                          row=2, col=1)
         for yv, cc in ((75, "#ef5350"), (25, "#26a69a")):
             fig.add_hline(y=yv, line_dash="dash", line_color=cc, line_width=1,
                           row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_k.index, y=r.dtosc_k.values,
-                                 line=dict(color="#42a5f5", width=1.5),
+                                 line=dict(color="#d32f2f", width=1.4),
                                  name="K"), row=2, col=1)
         fig.add_trace(go.Scatter(x=r.dtosc_d.index, y=r.dtosc_d.values,
-                                 line=dict(color="#ff7043", width=1.5),
+                                 line=dict(color="#2e7d32", width=1.4),
                                  name="D"), row=2, col=1)
         fig.update_yaxes(range=[0, 100], row=2, col=1)
 
-    fig.update_xaxes(range=[df.index[0], future_x + gap * 2])
-    fig.update_layout(height=660, template="plotly_dark",
+    fig.update_xaxes(range=[df.index[0], future_x + gap * 3])
+    fig.update_layout(height=680, template="plotly_dark",
                       xaxis_rangeslider_visible=False,
-                      margin=dict(l=0, r=0, t=34, b=0),
+                      margin=dict(l=0, r=0, t=46, b=0),
                       showlegend=False, hovermode="x unified")
     return fig
 
