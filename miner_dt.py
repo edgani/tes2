@@ -1499,46 +1499,58 @@ def _tf_status(series, setn: int, ma: str = "ema") -> dict:
 
 
 def dtf_guidance(rows: list) -> tuple:
-    """Miner Dual Time Frame: direction from Weekly+Daily, entry from 4H."""
-    d = {r["tf"]: r for r in rows}
-    wk = d.get("Weekly", {}).get("dir")
-    dl = d.get("Daily", {}).get("dir")
-    h4 = d.get("4H", {})
-    big = wk if (wk in ("BULL", "BEAR") and wk == dl) else None
-    h4txt = (f" Sekarang 4H: {h4.get('dir')}/{h4.get('zone')}."
-             if h4.get("dir") not in (None, "n/a") else "")
+    """Miner Dual Time Frame: direction from the two BIGGER TFs (rows[0],rows[1]),
+    entry timing from the smallest (rows[-1]). rows ordered largest→smallest."""
+    if len(rows) < 2:
+        return ("⚖️ Data timeframe kurang", "")
+    b1, b2, sm = rows[0], rows[1], rows[-1]
+    big = b1["dir"] if (b1["dir"] in ("BULL", "BEAR") and b1["dir"] == b2["dir"]) else None
+    smtxt = (f" Sekarang {sm['tf']}: {sm.get('dir')}/{sm.get('zone')}."
+             if sm.get("dir") not in (None, "n/a") else "")
     if big == "BULL":
-        head = "📈 ARAH BESAR: NAIK  (Weekly + Daily sama-sama bull)"
-        entry = ("Cari posisi BELI (long). Entry: tunggu 4H balik bullish (DTosc cross "
-                 "naik dari area oversold) searah trend besar." + h4txt)
+        head = f"📈 ARAH BESAR: NAIK  ({b1['tf']} + {b2['tf']} sama-sama bull)"
+        entry = (f"Cari BELI (long). Entry: tunggu {sm['tf']} balik bullish (DTosc cross "
+                 "naik dari oversold) searah trend besar." + smtxt)
     elif big == "BEAR":
-        head = "📉 ARAH BESAR: TURUN  (Weekly + Daily sama-sama bear)"
-        entry = ("Cari posisi JUAL/SHORT. Entry: tunggu 4H balik bearish (DTosc cross "
-                 "turun dari area overbought) searah trend besar." + h4txt)
+        head = f"📉 ARAH BESAR: TURUN  ({b1['tf']} + {b2['tf']} sama-sama bear)"
+        entry = (f"Cari JUAL/SHORT. Entry: tunggu {sm['tf']} balik bearish (DTosc cross "
+                 "turun dari overbought) searah trend besar." + smtxt)
     else:
-        head = f"⚖️ ARAH BESAR: CAMPUR  (Weekly={wk} vs Daily={dl})"
-        entry = ("Weekly & Daily belum searah — paling aman TUNGGU sampai align, "
-                 "atau ikut Daily dengan size kecil." + h4txt)
+        head = f"⚖️ ARAH BESAR: CAMPUR  ({b1['tf']}={b1['dir']} vs {b2['tf']}={b2['dir']})"
+        entry = (f"{b1['tf']} & {b2['tf']} belum searah — paling aman TUNGGU sampai "
+                 f"align, atau ikut {b2['tf']} dengan size kecil." + smtxt)
     return head, entry
 
 
-def multi_tf_view(ticker: str, market: str, ma: str = "ema") -> tuple:
-    """DTosc status on Weekly / Daily / 4H for one ticker (best-effort fetch)."""
-    cands, asset, _ = normalize_ticker(ticker, market)
-    specs = [("Weekly", "1wk", 2), ("Daily", "1d", 2), ("4H", "1h", 3)]
+# higher-TF ladder + pandas resample rule + Miner DTosc set per TF
+_TF_ORDER = ["15m", "30m", "1h", "4h", "1d", "1wk", "1mo", "3mo"]
+_TF_RULE = {"30m": "30min", "1h": "1h", "4h": "4h", "1d": "1D",
+            "1wk": "W", "1mo": "ME", "3mo": "QE"}
+_TF_NAME = {"15m": "15m", "30m": "30m", "1h": "1H", "4h": "4H", "1d": "Daily",
+            "1wk": "Weekly", "1mo": "Monthly", "3mo": "Quarterly"}
+_TF_SET = {"15m": 4, "30m": 4, "1h": 3, "4h": 3, "1d": 2, "1wk": 2,
+           "1mo": 1, "3mo": 1}
+
+
+def multi_tf_view(base_df, base_interval: str, ma: str = "ema") -> tuple:
+    """DTosc on the base TF + its two HIGHER TFs, by RESAMPLING the base data
+    (no extra network fetch → fast). Returns (rows largest→smallest, asset)."""
+    s0 = base_df["Close"].copy()
+    s0.index = pd.DatetimeIndex(s0.index)
+    bi = base_interval if base_interval in _TF_ORDER else "1d"
+    i = _TF_ORDER.index(bi)
+    chosen = [bi] + _TF_ORDER[i + 1:i + 3]            # base + next two higher
     rows = []
-    for name, iv, setn in specs:
-        try:
-            df, _ = fetch_data(list(cands), iv)
-            s = df["Close"].copy()
-            s.index = pd.DatetimeIndex(s.index)
-            if iv == "1h":
-                s = s.resample("4h").last().dropna()
-            st = _tf_status(s, setn, ma)
-        except Exception as e:  # noqa: BLE001
-            st = {"dir": "n/a", "zone": "n/a", "cross": None, "err": str(e)[:50]}
-        rows.append({"tf": name, "set": setn, **st})
-    return rows, asset
+    for tf in chosen:
+        if tf == bi:
+            s = s0
+        else:
+            s = s0.resample(_TF_RULE[tf]).last().dropna()
+        setn = _TF_SET[tf]
+        st = _tf_status(s, setn, ma)
+        rows.append({"tf": _TF_NAME[tf], "set": setn, "bars": len(s), **st})
+    rows.reverse()                                    # largest first
+    return rows, None
 
 
 def run_app():
@@ -1603,8 +1615,9 @@ def run_app():
 
     # ---------- need a ticker ----------
     if not ticker:
-        st.info("👈 Masukin ticker di sidebar, klik **Analyze**. "
-                "Contoh: `HUMI` (Market=idx), `USDJPY`, `BTC`, `GOLD`, `NVDA`, `^GSPC`")
+        st.info("👈 Ketik ticker di sidebar lalu **Enter** — langsung jalan, nggak "
+                "perlu klik apa-apa. Contoh: `HUMI` (Market=idx), `USDJPY`, `BTC`, "
+                "`GOLD`, `NVDA`, `^GSPC`")
         st.markdown("""
 **Ratio yang dipakai (verbatim Miner):**
 `Internal Ret` 0.382 / 0.50 / 0.618 / 0.786 · `External Ret` 1.27 / 1.62 / 2.62 ·
@@ -1685,18 +1698,18 @@ def run_app():
     st.caption("Aturan Miner: target itu ZONA (bukan 1 garis), pakai harga PENUTUPAN, "
                "tunggu konfirmasi. *Learn to trade, not forecast.*")
 
-    # ---------- multi-timeframe correlation (Dual Time Frame) ----------
-    st.markdown("### 🔭 Korelasi Timeframe (Weekly · Daily · 4H)")
-    st.caption("Cara Miner: arah dari timeframe BESAR (Weekly+Daily), entry dari "
-               "timeframe KECIL (4H). Klik buat cek (fetch 3 timeframe).")
-    if st.button("Cek korelasi multi-timeframe", width="stretch"):
-        with st.spinner("Ambil Weekly, Daily, 4H …"):
-            try:
-                rows, _ = multi_tf_view(ticker, market, ma)
-                st.session_state["_mtf"] = rows
-            except Exception as e:  # noqa: BLE001
-                st.session_state["_mtf"] = None
-                st.warning(f"Gagal ambil multi-TF: {e}")
+    # ---------- multi-timeframe correlation (auto, no fetch, instant) ----------
+    st.markdown("### 🔭 Korelasi Timeframe (multi-degree)")
+    st.caption("Arah dari timeframe BESAR (2 teratas), entry dari yang KECIL. "
+               "Di-resample dari data — instan, nggak perlu klik.")
+    mtf_key = f"{resolved}|{interval}"
+    if st.session_state.get("_mtf_key") != mtf_key:
+        try:
+            rows, _ = multi_tf_view(df, interval, ma)
+        except Exception:  # noqa: BLE001
+            rows = None
+        st.session_state["_mtf_key"] = mtf_key
+        st.session_state["_mtf"] = rows
     rows = st.session_state.get("_mtf")
     if rows:
         head, entry = dtf_guidance(rows)
@@ -1714,6 +1727,8 @@ def run_app():
         else:
             st.warning(f"**{head}**")
         st.markdown(f"**Entry:** {entry}")
+    else:
+        st.caption("⚠️ Data multi-TF belum bisa diambil (cek koneksi / ticker).")
 
     # ---------- technical detail (power users) ----------
     with st.expander("🔧 Detail teknikal (buat yang mau angka mentahnya)"):
