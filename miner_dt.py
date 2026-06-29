@@ -502,12 +502,79 @@ def score_triangle(q: list[Pivot]):
     return score, wc
 
 
+def score_diagonal(q: list[Pivot]):
+    """5-wave WEDGE with W4 overlapping W1 = diagonal (leading/ending). Same pivot
+    shape as impulse, but overlap is REQUIRED and legs form a wedge."""
+    if len(q) < 5:
+        return None
+    s = q[-5:]
+    p0, p1, p2, p3, p4 = (x.price for x in s)
+    kinds = [x.kind for x in s]
+    up = p1 > p0
+    if up and kinds != ["L", "H", "L", "H", "L"]:
+        return None
+    if (not up) and kinds != ["H", "L", "H", "L", "H"]:
+        return None
+    W1, W2, W3, W4 = abs(p1 - p0), abs(p2 - p1), abs(p3 - p2), abs(p4 - p3)
+    if min(W1, W3) <= 0:
+        return None
+    overlap = (up and p4 < p1) or ((not up) and p4 > p1)   # diagonal REQUIRES overlap
+    if not overlap:
+        return None
+    contracting = (W3 < W1) and (W4 < W2)
+    expanding = (W3 > W1) and (W4 > W2)
+    if not (contracting or expanding):
+        return None
+    soft = _nf(W2 / W1, (0.5, 0.618, 0.786, 0.886)) + _nf(W4 / W3, (0.5, 0.618, 0.786))
+    kl = "contracting" if contracting else "expanding"
+    score = 3.5 - soft + (0.3 if contracting else 0.0)
+    wc = WaveCount(
+        "DIAGONAL", "up" if up else "down",
+        f"Wave-5 of {kl} diagonal (in progress)", "eow5",
+        [s[0], s[1], s[3], s[4]], score, contracting,
+        ("SHARP reversal DOWN after W5" if up else "SHARP reversal UP after W5")
+        + " (diagonal is terminal)",
+        f"W1={W1:.4g} W3={W3:.4g} W4={W4:.4g} overlap✓ {kl}", skeleton=list(s))
+    return score, wc
+
+
+def score_wxy(q: list[Pivot]):
+    """W-X-Y double-three (double zigzag): W corrective + connector X + Y in
+    progress, with Y≈W (equality). Emitted as an ALTERNATE to a simple ABC."""
+    if len(q) < 3:
+        return None
+    s = q[-3:]
+    w0, w1, x1 = (x.price for x in s)
+    kinds = [x.kind for x in s]
+    down = (kinds == ["H", "L", "H"])     # W down, X up, Y down
+    up = (kinds == ["L", "H", "L"])       # W up, X down, Y up
+    if not (down or up):
+        return None
+    W, X = abs(w1 - w0), abs(x1 - w1)
+    if W <= 0:
+        return None
+    xr = X / W
+    if not (0.2 <= xr <= 0.95):           # connector must look like a 'three' joiner
+        return None
+    soft = _nf(xr, (0.382, 0.5, 0.618, 0.786))
+    score = 3.3 - soft                    # below a clean ABC (4.4) → alternate
+    direction = "down" if down else "up"
+    wc = WaveCount(
+        "WXY", direction, f"Wave-Y of double-three {direction} (in progress)", "eowc",
+        [s[0], s[1], s[2], s[2]], score, False,
+        ("up-reversal after Y completes" if down else "down-reversal after Y completes"),
+        f"W={W:.4g} X={X:.4g} (X/W={xr:.2f}) Y≈W equality", skeleton=list(s))
+    return score, wc
+
+
 def label_structure(pivots: list[Pivot]) -> tuple[Optional[WaveCount], Optional[WaveCount]]:
     """Try all templates on recent pivots, return (primary, alternate)."""
     if len(pivots) < 4:
         return None, None
     cands = []
-    for scorer, need in ((score_impulse, 5), (score_abc, 4), (score_triangle, 6)):
+    scorers = ((score_impulse, 5), (score_abc, 4), (score_triangle, 6),
+               (score_diagonal, 5), (score_wxy, 3))
+    for scorer, need in scorers:
         if len(pivots) >= need:
             res = scorer(pivots)
             if res:
@@ -640,10 +707,10 @@ def price_cluster_md(major: list, minor: list, direction: str, ref: float,
 
 def time_cluster_md(major: list, minor: list, last_idx: int, win: int = 2) -> tuple:
     """Miner-style reversal timing: project H-H and L-L cycles (two degrees) by
-    Fib ratios, cluster forward projections. Returns (ranked, peak_idx,
-    strength, members)."""
-    proj = []
-    for pivs, degw in ((major, 1.3), (minor, 0.8)):
+    Fib ratios, cluster forward projections. Returns (ranked, peak_idx, strength,
+    members, brackets) where brackets describe the TCR lines feeding the peak."""
+    proj = []   # (proj_idx, weight, p1_idx, p2_idx, ratio, kind, degname)
+    for pivs, degw, dn in ((major, 1.3, "maj"), (minor, 0.8, "min")):
         for knd in ("H", "L"):
             seq = [p for p in pivs if p.kind == knd]
             for i in range(len(seq) - 1):
@@ -651,16 +718,26 @@ def time_cluster_md(major: list, minor: list, last_idx: int, win: int = 2) -> tu
                 if cyc <= 0:
                     continue
                 for ratio in (0.618, 1.0, 1.618):
-                    proj.append((seq[i + 1].idx + int(round(cyc * ratio)), degw))
-    proj = [(x, w) for x, w in proj if x >= last_idx - 1]
+                    px = seq[i + 1].idx + int(round(cyc * ratio))
+                    proj.append((px, degw, seq[i].idx, seq[i + 1].idx, ratio, knd, dn))
+    proj = [p for p in proj if p[0] >= last_idx - 1]
     if not proj:
-        return [], None, None, None
-    scored = {x: sum(w for y, w in proj if abs(y - x) <= win)
-              for x, _ in proj}
+        return [], None, None, None, []
+    scored = {p[0]: sum(q[1] for q in proj if abs(q[0] - p[0]) <= win) for p in proj}
     ranked = sorted(scored.items(), key=lambda kv: kv[1], reverse=True)
     peak_idx = ranked[0][0]
-    members = [y for y, _w in proj if abs(y - peak_idx) <= win]
-    return ranked, peak_idx, len(members), members
+    members = [p[0] for p in proj if abs(p[0] - peak_idx) <= win]
+    seen, brackets = set(), []
+    for p in proj:
+        if abs(p[0] - peak_idx) <= win:
+            key = (p[2], p[3], round(p[4], 3))
+            if key in seen:
+                continue
+            seen.add(key)
+            brackets.append({"p1": p[2], "p2": p[3], "proj": p[0],
+                             "ratio": p[4], "kind": p[5], "deg": p[6]})
+    brackets.sort(key=lambda b: (abs(b["ratio"] - 1.0), abs(b["proj"] - peak_idx)))
+    return ranked, peak_idx, len(members), members, brackets[:4]
 
 
 def cluster_zones(components: dict[str, dict], price_ref: float,
@@ -855,6 +932,7 @@ class Result:
     price_zones: list[dict] = field(default_factory=list)
     time_band_dates: Optional[tuple] = None
     time_cluster_dates: list = field(default_factory=list)
+    time_brackets: list = field(default_factory=list)
     reversal_date: Optional[pd.Timestamp] = None
     reversal_strength: Optional[int] = None
     reversal_window: Optional[tuple] = None
@@ -931,17 +1009,24 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
 
     # --- TIME (Miner cluster): H-H & L-L cycles at 2 degrees, projected by Fib ---
     n_bars = len(series)
-    ranked, peak_idx, reversal_strength, members = time_cluster_md(
+    ranked, peak_idx, reversal_strength, members, brackets = time_cluster_md(
         major_piv, minor_piv, n_bars - 1,
         win=2 if interval in ("1d", "1h", "60m", "30m", "15m", "5m") else 1)
     reversal_date = reversal_window = None
     tcluster_dates = []
+    time_brackets = []
     if peak_idx is not None:
         reversal_date = idx_to_date(series.index, peak_idx)
         reversal_window = (idx_to_date(series.index, min(members)),
                            idx_to_date(series.index, max(members)))
         for bi, hits in ranked[:3]:
             tcluster_dates.append((idx_to_date(series.index, bi), int(round(hits))))
+        for b in brackets:
+            time_brackets.append({
+                "p1": idx_to_date(series.index, b["p1"]),
+                "p2": idx_to_date(series.index, b["p2"]),
+                "proj": idx_to_date(series.index, b["proj"]),
+                "ratio": b["ratio"], "kind": b["kind"], "deg": b["deg"]})
 
     # Time Band (Bressert) kept as secondary range context
     tband = time_band(highs, lows)
@@ -960,13 +1045,17 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
     wave_labels = []
     if primary and primary.skeleton:
         major_names = {"IMPULSE": ["(0)", "(1)", "(2)", "(3)", "(4)"],
+                       "DIAGONAL": ["(0)", "(1)", "(2)", "(3)", "(4)"],
                        "ABC": ["x", "(0)", "(A)", "(B)"],
+                       "WXY": ["(W)", "(X)", "·"],
                        "TRIANGLE": ["(A)", "(B)", "(C)", "(D)", "(E)", "x"]}.get(
             primary.pattern, [])
         for pv, nm in zip(primary.skeleton, major_names):
             wave_labels.append({"date": pv.date, "price": pv.price,
                                 "label": nm, "deg": "major", "kind": pv.kind})
         cur = {"eow5": "(5)", "eowc": "(C)", "thrust": "→"}.get(primary.proj_kind, "?")
+        if primary.pattern == "WXY":
+            cur = "(Y)"
         cur_kind = "H" if primary.direction == "up" else "L"
         wave_labels.append({"date": series.index[-1], "price": float(series.iloc[-1]),
                             "label": cur + "?", "deg": "major", "kind": cur_kind})
@@ -997,7 +1086,8 @@ def analyze(ticker: str = None, market: str = "auto", interval: str = "1d",
         wave_labels=wave_labels, dtosc_k=K, dtosc_d=D, proj_levels=proj_levels,
         minor_pivots=minor_piv,
         price_zones=price_zones, time_band_dates=tband_dates,
-        time_cluster_dates=tcluster_dates, reversal_date=reversal_date,
+        time_cluster_dates=tcluster_dates, time_brackets=time_brackets,
+        reversal_date=reversal_date,
         reversal_strength=reversal_strength, reversal_window=reversal_window,
         decision=dec, eow_kind=eow_kind,
     )
@@ -1137,6 +1227,86 @@ def print_zone_from_pivots(prices, kind, ref=None, tol_pct=0.6):
         print(f"  Zone {i}: {rng}{star}  score={z['score']} "
               f"({z['groups']} set/s) :: {', '.join(z['members'])}")
     print("=" * 64 + "\n")
+
+
+# ----------------------------------------------------------------------------
+# 8b. VALIDATION HARNESS (Module 20) — measure engine vs Miner's published chart
+# ----------------------------------------------------------------------------
+def validate_chart(name: str, pivots: list, direction: str, ref_price: float,
+                   expected_targets: list, expected_dates: list,
+                   eow_kind: Optional[str] = None, eow_prices: Optional[list] = None,
+                   tol_pct: float = 0.5, tol_bars: int = 2) -> dict:
+    """Compare the engine's PRICE cluster + TIME cluster against the numbers Miner
+    actually printed on a chart.
+
+      pivots          : list[Pivot] EXACTLY as Miner labelled (date,price,kind)
+      direction       : 'up' (target above) or 'down' (target below)
+      ref_price       : last close on the chart
+      expected_targets: Miner's printed price targets (floats)
+      expected_dates  : Miner's projected reversal dates (pivot .idx ints)
+      eow_kind/prices : optional — also test the EXACT manual EOW path
+      tol_pct/tol_bars: match tolerances
+
+    Returns a report dict with per-item errors + match rates.
+    """
+    # --- PRICE: auto multi-swing cluster ---
+    zones, _raw = price_cluster_md(pivots, pivots, direction, ref_price)
+    got = [z["mid"] for z in zones[:6]]
+    price_hits = []
+    for et in expected_targets:
+        err = min((abs(g - et) / abs(et) * 100.0 for g in got), default=999.0)
+        price_hits.append({"expected": et, "best_err_pct": round(err, 3),
+                           "match": err <= tol_pct})
+
+    # --- PRICE: exact manual EOW (if provided) ---
+    eow_zone = None
+    if eow_kind and eow_prices:
+        _c, ez = zone_from_pivots(eow_prices, eow_kind, ref_price)
+        conv = [z for z in ez if z["groups"] >= 2]
+        eow_zone = (conv[0] if conv else (ez[0] if ez else None))
+
+    # --- TIME: auto cluster ---
+    last_idx = max(p.idx for p in pivots)
+    ranked, peak, _strg, _members, _brk = time_cluster_md(pivots, pivots, last_idx)
+    got_idx = [bi for bi, _ in ranked[:8]]
+    time_hits = []
+    for ed in expected_dates:
+        err = min((abs(g - ed) for g in got_idx), default=999)
+        time_hits.append({"expected_idx": ed, "best_err_bars": err,
+                          "match": err <= tol_bars})
+
+    pr = sum(h["match"] for h in price_hits) / max(len(price_hits), 1)
+    tr = sum(h["match"] for h in time_hits) / max(len(time_hits), 1)
+    return {"name": name, "direction": direction,
+            "got_targets": [round(g, 4) for g in got],
+            "price_hits": price_hits, "price_match_rate": round(pr, 2),
+            "eow_zone": (None if eow_zone is None
+                         else {"low": round(eow_zone["low"], 4),
+                               "high": round(eow_zone["high"], 4)}),
+            "time_peak_idx": peak, "got_time_idx": got_idx,
+            "time_hits": time_hits, "time_match_rate": round(tr, 2)}
+
+
+def print_validation(report: dict) -> None:
+    r = report
+    print("=" * 70)
+    print(f" VALIDATION: {r['name']}   (target {r['direction']})")
+    print("=" * 70)
+    print(f" engine price clusters: {r['got_targets']}")
+    if r["eow_zone"]:
+        print(f" exact manual EOW zone: {r['eow_zone']['low']} - {r['eow_zone']['high']}")
+    print(" PRICE:")
+    for h in r["price_hits"]:
+        mk = "✓" if h["match"] else "✗"
+        print(f"   expected {h['expected']:<12} best err {h['best_err_pct']:>6}%  {mk}")
+    print(f"   → price match rate: {r['price_match_rate']*100:.0f}%")
+    print(f" engine time idx: {r['got_time_idx']}  (peak {r['time_peak_idx']})")
+    print(" TIME:")
+    for h in r["time_hits"]:
+        mk = "✓" if h["match"] else "✗"
+        print(f"   expected idx {h['expected_idx']:<6} best err {h['best_err_bars']:>3} bars  {mk}")
+    print(f"   → time match rate: {r['time_match_rate']*100:.0f}%")
+    print("=" * 70)
 
 
 # ----------------------------------------------------------------------------
@@ -1434,6 +1604,26 @@ def _plot(df, r, plan=None):
         pre = "↗" if z["mid"] > last_y else "↘"
         _line(z["mid"], f"{pre} ({z['mid']:.6g})", "#7e9bbf")
 
+    # --- TCR/ATP brackets: pivot → pivot → projected date (Miner top brackets) ---
+    for bi, b in enumerate(r.time_brackets[:4]):
+        yb = 0.945 - bi * 0.05                         # stack downward, paper-y
+        kk = f"{b['kind']}-{b['kind']}"               # H-H or L-L
+        bc = "#6b7f96"
+        # main bracket line p1 -> proj
+        fig.add_shape(type="line", x0=b["p1"], x1=b["proj"], y0=yb, y1=yb,
+                      xref="x", yref="paper", line=dict(color=bc, width=1))
+        # tick marks at p1, p2, proj
+        for xt, tall in ((b["p1"], 0.012), (b["p2"], 0.012), (b["proj"], 0.02)):
+            fig.add_shape(type="line", x0=xt, x1=xt, y0=yb - tall, y1=yb + tall,
+                          xref="x", yref="paper", line=dict(color=bc, width=1))
+        # label at the projected (right) end: kind + ratio + date
+        fig.add_annotation(x=b["proj"], y=yb, xref="x", yref="paper",
+                           text=f"{kk} {b['ratio']:.3f} · "
+                                f"{pd.Timestamp(b['proj']).strftime('%d%b%y')}",
+                           showarrow=False, xanchor="left", xshift=4,
+                           font=dict(color="#9fb4cc", size=9),
+                           bgcolor="rgba(0,0,0,0.4)")
+
     # reversal date vertical marker(s) + direction headline at top-center
     for dt, hits in (r.time_cluster_dates[:3] if r.time_cluster_dates else []):
         main = (r.reversal_date is not None and dt == r.reversal_date)
@@ -1482,10 +1672,19 @@ def _plot(df, r, plan=None):
                                  name="D"), row=2, col=1)
         fig.update_yaxes(range=[0, 100], row=2, col=1)
 
+    # headroom at top of the price panel so brackets sit in empty space
+    c_lo, c_hi = float(df["Low"].min()), float(df["High"].max())
+    zmids = [z["mid"] for z in r.price_zones[:3]
+             if last_y * 0.45 < z["mid"] < last_y * 1.9]
+    if zmids:
+        c_lo, c_hi = min(c_lo, min(zmids)), max(c_hi, max(zmids))
+    rng = (c_hi - c_lo) or (abs(c_hi) * 0.1 + 1e-9)
+    fig.update_yaxes(range=[c_lo - 0.06 * rng, c_hi + 0.34 * rng], row=1, col=1)
+
     fig.update_xaxes(range=[df.index[0], future_x + gap * 3])
-    fig.update_layout(height=680, template="plotly_dark",
+    fig.update_layout(height=720, template="plotly_dark",
                       xaxis_rangeslider_visible=False,
-                      margin=dict(l=0, r=0, t=46, b=0),
+                      margin=dict(l=0, r=0, t=60, b=0),
                       showlegend=False, hovermode="x unified")
     return fig
 
